@@ -1,0 +1,108 @@
+{
+  "version": "4.0.0-beta.21",
+  "license": "MIT",
+  "main": "dist/index.js",
+  "typings": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=10"
+  },
+  "husky": {
+    "hooks": {
+      "pre-commit": "dts lint"
+    }
+  },
+  "name": "@jup-ag/core",
+  "author": "zhengyutay",
+  "module": "dist/core.esm.js",
+  "size-limit": [
+    {
+      "path": "dist/core.cjs.production.min.js",
+      "limit": "10 KB"
+    },
+    {
+      "path": "dist/core.esm.js",
+      "limit": "10 KB"
+    }
+  ],
+  "devDependencies": {
+    "@size-limit/preset-small-lib": "~6.0.4",
+    "@tsconfig/recommended": "^1.0.1",
+    "dts-cli": "1.6.0",
+    "husky": "~7.0.4",
+    "size-limit": "~6.0.4",
+    "tslib": "^2.3.1",
+    "typescript": "5.0.4",
+    "@types/node": "^16",
+    "@types/bn.js": "^5.1.0",
+    "@solana/wallet-adapter-base": "0.9.22",
+    "@solana/buffer-layout": "4.0.0",
+    "bs58": "^4.0.1",
+    "@types/bs58": "^4.0.1",
+    "@types/promise-retry": "^1.1.3",
+    "rollup-plugin-uglify": "~6.0.4",
+    "@saberhq/solana-contrib": "1.13.6",
+    "@saberhq/saber-periphery": "~1.1.2",
+    "got": "~11.8.6",
+    "ts-node": "^10.9.1",
+    "@saberhq/token-utils": "1.13.6",
+    "vitest": "~0.29.2",
+    "vite": "~2.9.13",
+    "babel-plugin-transform-remove-console": "~6.9.4",
+    "typedoc": "~0.23.9",
+    "fetch-retry": "~5.0.6"
+  },
+  "peerDependencies": {
+    "@solana/web3.js": ">=1.42.0",
+    "@solana/buffer-layout": "^3 || ^4"
+  },
+  "dependencies": {
+    "@project-serum/serum": "0.13.65",
+    "@solana/spl-token": "0.1.8",
+    "decimal.js": "10.4.2",
+    "bn.js": "5.2.1",
+    "@coral-xyz/anchor": "0.28.0",
+    "cross-fetch": "3.1.6",
+    "@saberhq/stableswap-sdk": "1.13.6",
+    "promise-retry": "2.0.1",
+    "jsbi": "4.3.0",
+    "@jup-ag/math": "4.0.0-beta.21",
+    "@jup-ag/common": "4.0.0-beta.21",
+    "@mercurial-finance/optimist": "0.2.1",
+    "@jup-ag/lifinity-sdk": "0.1.72",
+    "@jup-ag/cykura-sdk-core": "0.1.8",
+    "@jup-ag/cykura-sdk": "0.1.25",
+    "@jup-ag/invariant": "0.9.35",
+    "@jup-ag/crema-sdk-v2": "2.1.6",
+    "@jup-ag/dradex-sdk": "0.2.3",
+    "@jup-ag/dradex-idl": "0.2.1",
+    "@mercurial-finance/dynamic-amm-sdk": "0.3.10",
+    "fzstd": "~0.0.4",
+    "@jup-ag/deltafi-sdk": "0.0.2",
+    "@pythnetwork/client": "2.7.3",
+    "bignumber.js": "9.1.0",
+    "@jup-ag/goosefx-ssl-sdk": "1.2.17",
+    "@noble/hashes": "1.1.2",
+    "@jup-ag/lifinity-sdk-v2": "1.0.8",
+    "@jup-ag/raydium-clmm-sdk": "1.0.6",
+    "@jup-ag/whirlpools-sdk": "0.7.2",
+    "lru-cache": "~7.14.1",
+    "@jup-ag/phoenix-sdk": "1.4.4"
+  },
+  "browserslist": [
+    "last 2 Chrome versions"
+  ],
+  "scripts": {
+    "start": "dts watch --noClean",
+    "build": "RELEASE=true dts build --minify --onSuccess && node ./scripts/fix-minify-file.js",
+    "test": "vitest run --no-threads",
+    "lint": "dts lint",
+    "size": "size-limit",
+    "analyze": "size-limit --why",
+    "generate-saber-add-decimals": "ts-node --files --project tsconfig.json cli/generateSaberAddDecimals.ts",
+    "fiddle": "ts-node --files --project tsconfig.json src/tools/fiddle-alt.ts",
+    "doc": "typedoc"
+  }
+}
