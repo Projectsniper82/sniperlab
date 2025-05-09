@@ -1,4 +1,4 @@
-// app/page.tsx (Corrected Version - Implements suggestions)
+// app/page.tsx (Relevant section for passing the 'network' prop)
 'use client';
 
 // Polyfill must come first
@@ -16,13 +16,11 @@ import Decimal from 'decimal.js';
 import { useNetwork, NetworkType } from '@/context/NetworkContext';
 
 // Utils
-// *** FIX: Import specific constants needed (including AMM V4 Program IDs) ***
 import {
-    DEVNET_AMM_V4_PROGRAM_ID,        // Use AMM V4 Program ID
-    MAINNET_AMM_V4_PROGRAM_ID,       // Use AMM V4 Program ID
-    DEVNET_AMM_V4_CONFIG_ID_STR,     // Use AMM V4 Config String
-    MAINNET_AMM_V4_CONFIG_ID_STR     // Use AMM V4 Config String
-    // Note: CREATE_POOL Program IDs are not used in getCpmmIds now, remove if not needed elsewhere
+    DEVNET_AMM_V4_PROGRAM_ID,
+    MAINNET_AMM_V4_PROGRAM_ID,
+    DEVNET_AMM_V4_CONFIG_ID_STR,
+    MAINNET_AMM_V4_CONFIG_ID_STR
 } from '@/utils/raydiumConsts';
 import { mintTokenWithPhantomWallet } from '@/utils/mintWithPhantom';
 import { initRaydiumSdk } from '@/utils/raydiumSdkAdapter';
@@ -51,12 +49,10 @@ const getAmmV4Ids = (network: 'devnet' | 'mainnet-beta') => {
     if (network === 'mainnet-beta') {
         selectedProgramId = MAINNET_AMM_V4_PROGRAM_ID;
         selectedConfigStr = mainnetConfigStr;
-        // *** ADDED DEBUG LOG ***
         console.log(`${functionName} Selected mainnet config string: "${selectedConfigStr}" (Type: ${typeof selectedConfigStr})`);
     } else { // Default to devnet
         selectedProgramId = DEVNET_AMM_V4_PROGRAM_ID;
         selectedConfigStr = devnetConfigStr;
-         // Add optional log for devnet if needed
         // console.log(`${functionName} Selected devnet config string: "${selectedConfigStr}" (Type: ${typeof selectedConfigStr})`);
     }
 
@@ -64,59 +60,54 @@ const getAmmV4Ids = (network: 'devnet' | 'mainnet-beta') => {
          console.error(`${functionName} Program ID is undefined for network: ${network}`);
          throw new Error(`Program ID is undefined for network: ${network}`);
     }
-    if (typeof selectedConfigStr !== 'string' || selectedConfigStr.length < 32) { // Basic check for string validity
+    if (typeof selectedConfigStr !== 'string' || selectedConfigStr.length < 32) {
         console.error(`${functionName} Config ID String is invalid or undefined for network ${network}:`, selectedConfigStr);
         throw new Error(`Config ID String is invalid or undefined for network ${network}`);
     }
 
     try {
-        // *** ADD THIS LINE ***
         console.log(`[getAmmV4Ids] String for PublicKey: ${JSON.stringify(selectedConfigStr)}`);
-        // --------------------
         console.log(`[getAmmV4Ids] Char codes: ${JSON.stringify(selectedConfigStr.split('').map(c => c.charCodeAt(0)))}`);
-        // Attempt PublicKey creation only after checks
-        const configIdPublicKey = new PublicKey(selectedConfigStr); 
+        const configIdPublicKey = new PublicKey(selectedConfigStr);
         console.log(`${functionName} Successfully created PublicKey for Config ID on ${network}.`);
         return {
             AMM_PROGRAM_ID: selectedProgramId,
             AMM_CONFIG_ID: configIdPublicKey
         };
     } catch (e: any) {
-       // ... existing error handling ...
-       // Make sure the throw inside the catch uses the variable:
-       throw new Error(`Non-base58 character detected in config ID string "${selectedConfigStr}" for network ${network}. Original error: ${e.message}`);
+       console.error(`[getAmmV4Ids] Error creating PublicKey from config string "${selectedConfigStr}" for network ${network}. Original error: ${e.message}`, e);
+       // More specific error for base58 issues
+       if (e.message && e.message.toLowerCase().includes("base-58")) {
+            throw new Error(`Non-base58 character detected in config ID string "${selectedConfigStr}" for network ${network}. Original error: ${e.message}`);
+       }
+       throw new Error(`Failed to create PublicKey from config ID string "${selectedConfigStr}" for network ${network}. Original error: ${e.message}`);
     }
 };
 
 
-// Added 'warning'
 type NotificationType = 'success' | 'error' | 'info' | 'warning' | '';
 
-// Token info state shape
 interface TokenInfoState {
     address: string;
     decimals: number;
-    supply: string; // Keep as string for large numbers
+    supply: string;
     isInitialized: boolean;
 }
 
-// LP Details State Shape
 interface LpTokenDetailsState {
-    lpTokenBalance: string; // Keep as string
+    lpTokenBalance: string;
     userPairedSOL: number;
     userPairedToken: number;
-    totalLpSupply: string; // Keep as string
+    totalLpSupply: string;
     lpTokenDecimals: number;
 }
 
-// PhantomWallet Interface
 interface PhantomWallet {
     publicKey: PublicKey;
     signTransaction: (transaction: Transaction) => Promise<Transaction>;
     signAllTransactions: (transactions: Transaction[]) => Promise<Transaction[]>;
 }
 
-// Type Guard
 function isPhantomWallet(wallet: any): wallet is PhantomWallet {
      return wallet &&
             typeof wallet === 'object' &&
@@ -129,12 +120,11 @@ function isPhantomWallet(wallet: any): wallet is PhantomWallet {
 export default function HomePage() {
     const { network, setNetwork, connection, rpcUrl } = useNetwork();
 
-    // State definitions
     const [wallet, setWallet] = useState<any>(null);
     const [tokenAddress, setTokenAddress] = useState('');
     const [tokenInfo, setTokenInfo] = useState<TokenInfoState | null>(null);
     const [solBalance, setSolBalance] = useState(0);
-    const [tokenBalance, setTokenBalance] = useState('0'); // Raw balance as string
+    const [tokenBalance, setTokenBalance] = useState('0');
     const [isLoading, setIsLoading] = useState(false);
     const [errorMessage, setErrorMessage] = useState('');
     const [notification, setNotification] = useState<{
@@ -151,7 +141,6 @@ export default function HomePage() {
     });
 
 
-    // Check SDK deps on mount
     useEffect(() => {
        const { isReady, missingDependencies } = checkRaydiumDependencies();
        if (!isReady) {
@@ -162,7 +151,6 @@ export default function HomePage() {
        }
     }, []);
 
-    // Fetch balance for the currently loaded tokenAddress
     const fetchTokenBalance = useCallback(
          async (ownerPublicKey: PublicKey, mintPublicKey: PublicKey) => {
              console.log(`[fetchTokenBalance] Fetching balance for mint ${mintPublicKey.toBase58()}`);
@@ -175,7 +163,7 @@ export default function HomePage() {
                          const bal = new BN(curr.account.data.parsed.info.tokenAmount.amount);
                          return bal.gt(acc.balance) ? { info: curr.account.data.parsed.info, balance: bal } : acc;
                      }, { info: null as any, balance: new BN(0) });
-                     setTokenBalance(best.info?.tokenAmount.amount ?? '0'); // Store raw amount string
+                     setTokenBalance(best.info?.tokenAmount.amount ?? '0');
                      console.log(`[fetchTokenBalance] Balance found: ${best.info?.tokenAmount.uiAmountString ?? '0'} (raw: ${best.info?.tokenAmount.amount ?? '0'})`);
                  } else {
                      setTokenBalance('0');
@@ -190,10 +178,8 @@ export default function HomePage() {
     );
 
 
-    // Fetch LP details
     const fetchLpTokenDetails = useCallback(async () => {
         const functionName = "[fetchLpTokenDetails]";
-        // Reset LP details at the start
         setLpDetails({ lpTokenBalance: '0', userPairedSOL: 0, userPairedToken: 0, totalLpSupply: '0', lpTokenDecimals: 0 });
 
         if (!wallet?.publicKey || !tokenAddress || !connection || !tokenInfo || typeof tokenInfo.decimals !== 'number') {
@@ -206,21 +192,17 @@ export default function HomePage() {
 
         try {
             const pastedTokenMintPk = new PublicKey(tokenAddress);
-            // *** Use the updated helper function with AMM V4 IDs ***
-            const ammV4Ids = getAmmV4Ids(network); // Use the updated helper
+            const ammV4Ids = getAmmV4Ids(network);
 
             console.log(`${functionName} Deriving potential AMM V4 pool keys using Program ${ammV4Ids.AMM_PROGRAM_ID.toBase58()} and Config ${ammV4Ids.AMM_CONFIG_ID.toBase58()}`);
             let potentialPoolKeys;
-            // Derive keys using the correct AMM IDs
             potentialPoolKeys = getCreatePoolKeys({
-                 programId: ammV4Ids.AMM_PROGRAM_ID, // Use AMM Program ID
-                 configId: ammV4Ids.AMM_CONFIG_ID,   // Use AMM Config ID
+                 programId: ammV4Ids.AMM_PROGRAM_ID,
+                 configId: ammV4Ids.AMM_CONFIG_ID,
                  mintA: NATIVE_MINT,
                  mintB: pastedTokenMintPk,
              });
              console.log(`${functionName} Potential Pool ID: ${potentialPoolKeys.poolId.toBase58()}, LP Mint: ${potentialPoolKeys.lpMint.toBase58()}, VaultA (SOL): ${potentialPoolKeys.vaultA.toBase58()}, VaultB (Token): ${potentialPoolKeys.vaultB.toBase58()}`);
-
-            // --- Rest of the logic remains the same, using potentialPoolKeys ---
 
             let lpMintData;
             try {
@@ -236,7 +218,7 @@ export default function HomePage() {
                  setLpDetails({ lpTokenBalance: '0', userPairedSOL: 0, userPairedToken: 0, totalLpSupply: '0', lpTokenDecimals: 0 });
                  setNotification(localNotification);
                  setTimeout(() => setNotification(prev => prev.message === localNotification.message ? { show: false, message: '', type: '' } : prev), 4000);
-                 return; // Exit if LP mint not found
+                 return;
             }
 
             let currentLpBalanceBN = new BN(0);
@@ -258,7 +240,6 @@ export default function HomePage() {
                  } else {
                    localNotification = { show: true, message: `Error fetching your LP balance: ${err.message.substring(0, 70)}...`, type: 'error' };
                  }
-                 // Keep existing total supply/decimals if balance fetch fails
                  setLpDetails(prev => ({ ...prev, lpTokenBalance: '0', userPairedSOL: 0, userPairedToken: 0, totalLpSupply: lpMintData?.supply.toString() ?? '0', lpTokenDecimals: lpMintData?.decimals ?? 0 }));
             }
 
@@ -278,19 +259,17 @@ export default function HomePage() {
             } catch (err: any) {
                 console.warn(`${functionName} Error fetching pool vault balances for ${tokenAddress} on ${network}. Vaults might be empty or pool not fully initialized.`, err);
                 localNotification = { show: true, message: `Pool found, but reserves couldn't be fetched (maybe empty?).`, type: 'warning' };
-                 // Still set LP balance if fetched, but paired amounts are 0
                  setLpDetails(prev => ({ ...prev, lpTokenBalance: currentLpBalanceBN.toString(), userPairedSOL: 0, userPairedToken: 0, totalLpSupply: lpMintData.supply.toString(), lpTokenDecimals: lpMintData.decimals }));
             }
 
-            // Calculate final details based on available data
             const currentTotalLpSupplyBN = new BN(lpMintData.supply.toString());
             const lpDecimals = lpMintData.decimals;
             const finalLpDetails: LpTokenDetailsState = {
                 lpTokenBalance: currentLpBalanceBN.toString(),
                 totalLpSupply: currentTotalLpSupplyBN.toString(),
                 lpTokenDecimals: lpDecimals,
-                userPairedSOL: 0, // Default to 0
-                userPairedToken: 0, // Default to 0
+                userPairedSOL: 0,
+                userPairedToken: 0,
             };
 
             if (reservesFetched && tokenInfo.decimals >= 0) {
@@ -298,35 +277,28 @@ export default function HomePage() {
                  const solDivisor = new Decimal(1e9);
 
                  if (currentTotalLpSupplyBN.gtn(0) && currentLpBalanceBN.gtn(0)) {
-                      // Calculate user's share of reserves
                       const userShareSolLamportsBN = currentLpBalanceBN.mul(totalSolInPoolBN).div(currentTotalLpSupplyBN);
                       finalLpDetails.userPairedSOL = new Decimal(userShareSolLamportsBN.toString()).div(solDivisor).toNumber();
 
                       const userShareTokenRawBN = currentLpBalanceBN.mul(totalTokenInPoolBN).div(currentTotalLpSupplyBN);
                       finalLpDetails.userPairedToken = tokenDivisor.isZero() ? 0 : new Decimal(userShareTokenRawBN.toString()).div(tokenDivisor).toNumber();
                  }
-
-                 setLpDetails(finalLpDetails); // Set details including calculated paired amounts
-
+                 setLpDetails(finalLpDetails);
                  if (localNotification.type !== 'error' && localNotification.type !== 'warning') {
                       localNotification = { show: true, message: 'LP details updated!', type: 'success' };
                  }
-
             } else {
-                // If reserves weren't fetched, set details without paired amounts
                 setLpDetails(finalLpDetails);
                  if (localNotification.type !== 'error' && localNotification.type !== 'warning') {
                       localNotification = { show: true, message: 'Updated LP balance (pool reserves unavailable).', type: 'info' };
                  }
             }
-
         } catch (err: any) {
-            // Catch errors from getAmmV4Ids or getCreatePoolKeys or subsequent logic
             console.error(`${functionName} Error processing LP details for ${tokenAddress} on ${network}:`, err);
-            if (localNotification.type !== 'error') { // Don't override specific errors
+            if (localNotification.type !== 'error') {
                 localNotification = { show: true, message: `Failed to process LP details: ${err.message.substring(0,100)}...`, type: 'error' };
             }
-            setLpDetails({ lpTokenBalance: '0', userPairedSOL: 0, userPairedToken: 0, totalLpSupply: '0', lpTokenDecimals: 0 }); // Reset on error
+            setLpDetails({ lpTokenBalance: '0', userPairedSOL: 0, userPairedToken: 0, totalLpSupply: '0', lpTokenDecimals: 0 });
         } finally {
             setNotification(localNotification);
             setTimeout(() => setNotification(prev => prev.message === localNotification.message ? { show: false, message: '', type: '' } : prev), 4000);
@@ -349,7 +321,7 @@ export default function HomePage() {
              try {
                  const bal = await connection.getBalance(walletAdapter.publicKey);
                  setSolBalance(bal / 1e9);
-                 await initRaydiumSdk(walletAdapter, connection, network); // Pass network
+                 await initRaydiumSdk(walletAdapter, connection, network);
 
                  if (tokenAddress) {
                      console.log("[handleWalletConnected] Fetching initial token balance for:", tokenAddress);
@@ -363,7 +335,7 @@ export default function HomePage() {
                  setIsLoading(false);
              }
          },
-         [connection, tokenAddress, fetchTokenBalance, network, setNotification, setIsLoading] // Removed initRaydiumSdk if not needed in deps
+         [connection, tokenAddress, fetchTokenBalance, network, setNotification, setIsLoading]
     );
 
     const refreshBalances = useCallback(async () => {
@@ -378,13 +350,12 @@ export default function HomePage() {
 
              if (tokenAddress && tokenInfo) {
                  await fetchTokenBalance(wallet.publicKey, new PublicKey(tokenAddress));
-                 await fetchLpTokenDetails(); // This will show its own notifications
-                 // Only show generic success if LP fetch didn't show specific info/warn/error
+                 await fetchLpTokenDetails();
                  setTimeout(() => setNotification(prev => {
                     if(prev.message === initialNotification.message || prev.type === 'success') {
                         return {show: true, message: `Balances refreshed!`, type: 'success'};
                     }
-                    return prev; // Keep existing notification if it was warn/error from LP fetch
+                    return prev;
                  }), 100);
 
              } else {
@@ -393,14 +364,12 @@ export default function HomePage() {
                   setNotification({show: true, message: `Balances refreshed!`, type: 'success'});
                   setTimeout(() => setNotification({ show: false, message: '', type: '' }), 2500);
              }
-
          } catch (err: any) {
              console.error(`Error refreshing balances on ${network}:`, err);
              setNotification({ show: true, message: `Error refreshing balances: ${err.message}`, type: 'error' });
               setTimeout(() => setNotification({ show: false, message: '', type: '' }), 3000);
          } finally {
              setIsLoading(false);
-              // Clear the "Refreshing..." or final "Success" message after a delay
               setTimeout(() => setNotification(prev => (prev.message.includes("Refreshing balances") || prev.message.includes("Balances refreshed!")) ? { show: false, message: '', type: '' } : prev), 3000);
          }
     }, [wallet, connection, tokenAddress, tokenInfo, fetchTokenBalance, fetchLpTokenDetails, network, setIsLoading, setNotification]);
@@ -437,7 +406,6 @@ export default function HomePage() {
              if (wallet?.publicKey) {
                  await fetchTokenBalance(wallet.publicKey, mintPub);
              }
-
          } catch (err: any) {
              console.error(`Error loading token info for ${tokenAddress} on ${network}:`, err);
              const userFriendlyError = (err.message && err.message.includes("Invalid public key"))
@@ -459,7 +427,6 @@ export default function HomePage() {
          }
     }, [tokenAddress, connection, wallet, fetchTokenBalance, network, setNotification]);
 
-    // Debounced effect to load token info
     useEffect(() => {
         let isValidFormat = false;
         if(tokenAddress && tokenAddress.length >= 32 && tokenAddress.length <= 44) {
@@ -470,9 +437,9 @@ export default function HomePage() {
             setErrorMessage('Invalid token address format.');
             setTokenInfo(null); setTokenBalance('0');
             setLpDetails({ lpTokenBalance: '0', userPairedSOL: 0, userPairedToken: 0, totalLpSupply: '0', lpTokenDecimals: 0 });
-             return; // Don't trigger loadTokenInfo
+             return;
         } else if (isValidFormat) {
-            setErrorMessage(''); // Clear error message if format becomes valid
+            setErrorMessage('');
         }
 
 
@@ -481,30 +448,26 @@ export default function HomePage() {
                 loadTokenInfo();
             }
              else if (!tokenAddress) {
-                // Clear info if address is cleared
                 setTokenInfo(null); setTokenBalance('0'); setErrorMessage('');
                 setLpDetails({ lpTokenBalance: '0', userPairedSOL: 0, userPairedToken: 0, totalLpSupply: '0', lpTokenDecimals: 0 });
             }
-        }, 600); // Debounce time
+        }, 600);
 
         return () => clearTimeout(handler);
-    }, [tokenAddress, network, loadTokenInfo]); // Rerun if network changes too
+    }, [tokenAddress, network, loadTokenInfo]);
 
-    // Effect to fetch LP details when prerequisites are met
     useEffect(() => {
         if (tokenInfo && tokenInfo.isInitialized && typeof tokenInfo.decimals === 'number' && wallet?.publicKey && connection) {
             console.log("[useEffect Trigger] Fetching LP details because tokenInfo/wallet/connection changed.");
             fetchLpTokenDetails();
         } else {
              console.log("[useEffect Trigger] Resetting LP details because prerequisites are not met.");
-              // Only reset if details were previously populated, prevents unnecessary state updates
              if (lpDetails.lpTokenBalance !== '0' || lpDetails.totalLpSupply !== '0') {
                  setLpDetails({ lpTokenBalance: '0', userPairedSOL: 0, userPairedToken: 0, totalLpSupply: '0', lpTokenDecimals: 0 });
              }
         }
-    }, [tokenInfo, wallet, connection, fetchLpTokenDetails]); // Dependencies are correct
+    }, [tokenInfo, wallet, connection, fetchLpTokenDetails]);
 
-    // Placeholder for subtracting balances
     const subtractBalances = useCallback(
           ({ tokenAmount, solAmount }: { tokenAmount: number | string | BN; solAmount: number }) => {
              console.warn('[subtractBalances] Placeholder called - UI update needed if simulating before TX confirmation.', { tokenAmount, solAmount });
@@ -512,14 +475,12 @@ export default function HomePage() {
          []
     );
 
-    // Handles network switching
     const handleNetworkChange = (newNetwork: NetworkType) => {
          if (newNetwork === network) return;
 
          console.log("[handleNetworkChange] Switching to:", newNetwork);
-         // Reset almost all state
          setWallet(null);
-         setTokenAddress(''); // Clear token address
+         setTokenAddress('');
          setTokenInfo(null);
          setSolBalance(0);
          setTokenBalance('0');
@@ -527,9 +488,8 @@ export default function HomePage() {
          setErrorMessage('');
          setIsLoading(false);
 
-         setNetwork(newNetwork); // Update network context
+         setNetwork(newNetwork);
 
-         // Notify user
          setNotification({
              show: true,
              message: `Switched to ${newNetwork}. Please reconnect wallet and load a token for this network.`,
@@ -557,7 +517,6 @@ export default function HomePage() {
                  <p className="text-gray-400 text-xs mt-1">Test token minting, LP management, swaps, and live pricing.</p>
             </header>
 
-             {/* Mint Button */}
             {wallet && (
                  <div className="mb-6 text-center">
                      <button
@@ -577,9 +536,8 @@ export default function HomePage() {
                              try {
                                  const result = await mintTokenWithPhantomWallet(wallet, connection, 'TestToken');
                                  if (result?.mintAddress) {
-                                     setTokenAddress(result.mintAddress); // Set address, triggers loadTokenInfo via useEffect
+                                     setTokenAddress(result.mintAddress);
                                      setNotification({ show: true, message: `Token minted!\nAddress: ${result.mintAddress.substring(0, 10)}... Now loading info...`, type: 'success' });
-                                      // loadTokenInfo will be triggered by useEffect watching tokenAddress
                                  } else { throw new Error('Minting did not return address.'); }
                              } catch (err: any) {
                                  console.error('Mint error:', err);
@@ -587,7 +545,6 @@ export default function HomePage() {
                                  setTimeout(() => setNotification({ show: false, message: '', type: '' }), 4000);
                              } finally {
                                  setIsLoading(false);
-                                 // Clear "Minting..." message after a delay
                                  setTimeout(() => setNotification(prev => prev.message.includes("Minting") ? { show: false, message: '', type: '' } : prev), 4000);
                              }
                          }}
@@ -599,11 +556,8 @@ export default function HomePage() {
                  </div>
             )}
 
-            {/* Main Layout Grid */}
             <div className="grid lg:grid-cols-3 gap-6 mb-6">
-                {/* Left Column */}
                 <div className="lg:col-span-1 space-y-6">
-                    {/* Token Address Input */}
                     <div className="bg-gray-900 p-4 sm:p-6 rounded-lg border border-gray-800 shadow">
                          <label htmlFor="token-address-input" className="block text-lg mb-2 text-gray-200">Token Address ({network})</label>
                         <input
@@ -618,14 +572,11 @@ export default function HomePage() {
                             <button onClick={refreshBalances} disabled={!wallet || isLoading} className="px-4 py-2 bg-gray-700 rounded hover:bg-gray-600 disabled:opacity-50">{isLoading ? 'Refreshing...' : 'Refresh Balances'}</button>
                         </div>
                     </div>
-                    {/* Wallet Connect */}
                     <WalletConnect setWallet={handleWalletConnected} connection={connection} refreshBalances={refreshBalances} setNotification={setNotification} />
                 </div>
 
-                {/* Right Column */}
                 {wallet && tokenInfo ? (
                      <div className="lg:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-6">
-                         {/* Token Info */}
                          <div className="md:col-span-1">
                              <TokenInfo
                                  tokenInfo={tokenInfo}
@@ -638,15 +589,13 @@ export default function HomePage() {
                                  lpTokenDecimals={lpDetails.lpTokenDecimals}
                              />
                          </div>
-                         {/* Live Chart */}
                          <div className="md:col-span-2">
-                             {/* *** ADD network prop and optional chaining *** */}
                              <LiveTokenChart
                                  tokenMint={tokenAddress}
                                  tokenDecimals={tokenInfo?.decimals}
                                  tokenSupply={tokenInfo?.supply}
                                  connection={connection}
-                                 network={network}
+                                 network={network} // network prop is already correctly passed here
                              />
                          </div>
                      </div>
@@ -657,33 +606,31 @@ export default function HomePage() {
                 )}
             </div>
 
-             {/* Bottom Row */}
             {wallet && tokenInfo ? (
                  <div className="grid md:grid-cols-2 gap-6">
-                     {/* Liquidity Manager */}
-                     {/* @ts-ignore still needed for JS component */}
+                     {/* SimulatedLiquidityManager - Ensure network prop is passed */}
                      <SimulatedLiquidityManager
-                          wallet={wallet as any}
+                          wallet={wallet as any} // Cast to any if using JS component with TS parent
                           connection={connection}
                           tokenAddress={tokenAddress}
-                          tokenDecimals={tokenInfo?.decimals} // Optional chaining
+                          tokenDecimals={tokenInfo?.decimals}
                           tokenBalance={tokenBalance}
                           solBalance={solBalance}
                           refreshBalances={refreshBalances}
                           subtractBalances={subtractBalances}
+                          network={network} // <<<< THIS IS THE KEY ADDITION/CONFIRMATION
                      />
-                      {/* Trading Interface */}
                      <TradingInterface
                           wallet={wallet as any}
                           connection={connection}
                           tokenAddress={tokenAddress}
-                          tokenDecimals={tokenInfo?.decimals} // Optional chaining
+                          tokenDecimals={tokenInfo?.decimals}
                           tokenBalance={tokenBalance}
                           solBalance={solBalance}
                           refreshBalances={refreshBalances}
                           subtractBalances={subtractBalances}
                           setNotification={setNotification}
-                          network={network}
+                          network={network} // network prop is already correctly passed here
                      />
                  </div>
             ) : (
@@ -692,8 +639,7 @@ export default function HomePage() {
                   </div>
             )}
 
-            {/* Loading Overlay */}
-             {isLoading && (
+            {isLoading && (
                   <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50">
                        <div className="bg-gray-800 p-6 rounded-lg shadow-lg text-center">
                          <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
@@ -702,8 +648,6 @@ export default function HomePage() {
                   </div>
              )}
 
-
-            {/* Notification */}
             {notification.show && (
                  <div className="fixed bottom-4 right-4 z-50 max-w-sm">
                       <div className={`px-4 py-3 rounded shadow-lg text-sm break-words whitespace-pre-wrap ${
