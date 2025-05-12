@@ -1,0 +1,8 @@
+[33m90b3c78b[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m)[m poolfinderservices.ts but with errors
+[33me03e7ee9[m Added poolfinderservices.ts for API pool calls
+[33m67715163[m Working bn58
+[33m044e60fc[m fixed chart loading error
+[33m649eddb0[m Cleanup: remove old deleted paths, track only next-sniper project
+[33mdce2aaf7[m Initial commit of Next-sniper project
+[33ma636f77a[m YOUR MESSAGE: update trading dashboard components
+[33mb3a87bc0[m Initial commit of funding wallet dashboard on Devnet

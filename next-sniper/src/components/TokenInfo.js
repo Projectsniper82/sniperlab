@@ -11,7 +11,7 @@ function TokenInfo({
   tokenInfo,
   tokenBalance, // raw string balance
   solBalance,
-  // --- New LP Props ---
+  // --- Ensure these New LP Props are destructured ---
   lpTokenBalance, // raw string LP token balance
   userPairedSOL,
   userPairedToken,
@@ -100,9 +100,8 @@ function TokenInfo({
   const formattedTotalLpSupply = formatNumber(totalLpSupplyToFormat, lpTokenDecimals > 0 ? 2 : 0);
 
 
-  const showLpInfo = lpTokenBalance && parseFloat(lpTokenBalance) > 0 && lpTokenDecimals !== undefined;
+  const showLpInfo = lpTokenBalance && new Decimal(lpTokenBalance).gt(0) && lpTokenDecimals !== undefined; // Use Decimal for gt(0)
 
-  // Get a short name for the token (e.g., from tokenAddress or a potential tokenInfo.name field if you add it)
   const tokenName = tokenInfo.address ? `${tokenInfo.address.substring(0,4)}...${tokenInfo.address.substring(tokenInfo.address.length - 4)}` : 'Token';
 
 
@@ -115,10 +114,9 @@ function TokenInfo({
         </div>
       </div>
 
-      {/* Token Address and Supply Info */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4"> {/* Added mb-4 here */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
         <div className="bg-gray-800 p-4 rounded-lg overflow-hidden">
-          <p className="text-gray-400 text-xs mb-1">Token Address (Devnet)</p>
+          <p className="text-gray-400 text-xs mb-1">Token Address</p> {/* Removed (Devnet) as network is global */}
           <p className="text-white font-mono text-sm break-all">{tokenInfo.address || 'N/A'}</p>
         </div>
 
@@ -129,9 +127,9 @@ function TokenInfo({
         </div>
       </div>
 
-      {/* --- NEW LP Information Box --- */}
+      {/* --- LP Information Box --- */}
       {showLpInfo && (
-        <div className="bg-gray-800 p-4 rounded-lg mb-4"> {/* Added mb-4 here */}
+        <div className="bg-gray-800 p-4 rounded-lg mb-4">
           <h3 className="text-md font-semibold text-blue-300 mb-2">Your Liquidity Pool Share</h3>
           <div className="space-y-1 text-sm">
             <div>
@@ -139,34 +137,33 @@ function TokenInfo({
               <p className="text-white font-medium">{formattedLpBalance}</p>
             </div>
             <div>
-              <p className="text-gray-400">Paired SOL/WSOL:</p>
+              <p className="text-gray-400">Your Share of Pool SOL/WSOL:</p>
               <p className="text-white font-medium">
                 {userPairedSOL !== undefined ? userPairedSOL.toLocaleString(undefined, { maximumFractionDigits: 6 }) : 'N/A'}
               </p>
             </div>
             <div>
-              <p className="text-gray-400">Paired {tokenName}:</p>
+              <p className="text-gray-400">Your Share of Pool {tokenName}:</p>
               <p className="text-white font-medium">
                 {userPairedToken !== undefined ? userPairedToken.toLocaleString(undefined, { maximumFractionDigits: tokenInfo.decimals > 0 ? Math.min(tokenInfo.decimals, 6) : 2 }) : 'N/A'}
               </p>
             </div>
-            {parseFloat(totalLpSupply) > 0 && (
+            {new Decimal(totalLpSupply || "0").gt(0) && ( // check totalLpSupply directly
                 <p className="text-xs text-gray-500 pt-1">
-                    (Total LP Supply: {formattedTotalLpSupply})
+                    (Pool Total LP Supply: {formattedTotalLpSupply})
                 </p>
             )}
           </div>
         </div>
       )}
-      {/* --- End of NEW LP Information Box --- */}
+      {/* --- End of LP Information Box --- */}
 
 
-      {/* Your Balance Box */}
       <div className="mt-4 p-5 bg-gradient-to-r from-blue-900 to-purple-900 rounded-lg shadow">
         <h3 className="text-white text-lg mb-3">Your Balance</h3>
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <p className="text-gray-300 text-xs">Token Balance (UI)</p>
+            <p className="text-gray-300 text-xs">Token Balance</p> {/* Simplified from (UI) */}
             <p className="text-white text-xl font-bold">{formattedBalance}</p>
           </div>
           <div>
