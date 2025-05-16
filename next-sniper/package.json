@@ -36,6 +36,7 @@
     "@types/bn.js": "^5.1.6",
     "@types/node": "^20",
     "@types/node-fetch": "^2.6.12",
+    "@types/p-limit": "^2.1.0",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/recharts": "^1.8.29",
