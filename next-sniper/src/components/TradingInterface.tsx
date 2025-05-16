@@ -2,6 +2,7 @@
 // Added detailed logging
 // Added selectedPool prop
 // Corrected setNotification prop type
+// ADDED isPoolSelected prop to interface
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { Connection, PublicKey } from '@solana/web3.js'; // Import types
@@ -31,6 +32,7 @@ interface TradingInterfaceProps {
     selectedPool: DiscoveredPoolDetailed | null;
     setNotification: React.Dispatch<React.SetStateAction<{ show: boolean; message: string; type: NotificationType; }>>; // +++++ CORRECTED type here +++++
     network: NetworkType;
+    isPoolSelected: boolean; // +++++ ADDED THIS PROP +++++
 }
 
 // Configure Decimal.js
@@ -49,6 +51,7 @@ function TradingInterface({
     selectedPool,
     setNotification, // Destructured
     network,       // Destructured
+    isPoolSelected, // Destructured
 }: TradingInterfaceProps) {
     const [buyAmount, setBuyAmount] = useState<string>('');
     const [sellAmount, setSellAmount] = useState<string>('');
