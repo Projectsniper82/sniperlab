@@ -27,6 +27,7 @@
     "node-fetch": "^3.3.2",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "react-toastify": "^11.0.5",
     "recharts": "^2.15.1",
     "stream-chain": "^3.4.0",
     "stream-json": "^1.9.1"

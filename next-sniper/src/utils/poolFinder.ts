@@ -1,199 +1,182 @@
 // src/utils/poolFinder.ts
-// @ts-nocheck (you can remove this later by adding more specific types)
-
 import { Connection, PublicKey } from '@solana/web3.js';
 import { NATIVE_MINT } from '@solana/spl-token';
-import { Raydium, ApiPoolInfo, ClmmPoolInfo, AmmPoolKeys } from '@raydium-io/raydium-sdk-v2';
-import BN from 'bn.js';
+import { 
+    Raydium, 
+    ApiPoolInfoV4, // Assuming this is the correct type from sdk.api.fetchPoolByMints
+    MAINNET_PROGRAM_ID as RAYDIUM_MAINNET_PROGRAM_ID,
+    DEVNET_PROGRAM_ID as RAYDIUM_DEVNET_PROGRAM_ID
+} from '@raydium-io/raydium-sdk-v2';
+import { toast } from 'react-toastify'; // Assuming react-toastify is used for notifications
 
 export interface DiscoveredPoolDetailed {
-    id: string;
-    programId: string;
-    type: string;
-    price: number | string;
-    tvl: number | string;
-    mintA: string; // Your input mintStr (token)
-    mintB: string; // NATIVE_MINT (SOL)
-    vaultA: string; // Vault for mintA (token)
-    vaultB: string; // Vault for mintB (SOL)
-    rawSdkPoolInfo: any;
-    lpMint?: string;
+  id: string;
+  type: 'Standard' | 'CLMM' | 'Unknown'; 
+  mintA: string; // e.g., tokenMintAddress
+  mintB: string; // e.g., baseMintToPair (SOL)
+  vaultA: string;
+  vaultB: string;
+  lpMint: string;
+  tvl: number;
+  price: number; // Price of mintA in terms of mintB, or vice-versa depending on how API returns it
+  programId: string;
+  rawSdkPoolInfo: ApiPoolInfoV4; 
+  baseSymbol?: string;  // Symbol of mintA (token)
+  quoteSymbol?: string; // Symbol of mintB (e.g., SOL)
+  baseDecimals?: number;
+  quoteDecimals?: number;
+  reserveA?: string; 
+  reserveB?: string; 
 }
-
-const DEFAULT_RPC_REQUEST_DELAY_MS = 3000; // Further increased delay
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-const safeToBase58 = (value: any): string => {
-    if (value instanceof PublicKey) {
-        return value.toBase58();
-    }
-    if (typeof value === 'string') {
-        try {
-            new PublicKey(value);
-            return value;
-        } catch (e) {
-            return 'N/A';
-        }
-    }
-    if (value && typeof value.toString === 'function' && !(value instanceof BN)) {
-        const strVal = value.toString();
-        try {
-            new PublicKey(strVal);
-            return strVal;
-        } catch (e) {
-            return 'N/A';
-        }
-    }
-    return 'N/A';
-};
-
 export async function fetchRaydiumPoolsFromSDK(
-    connection: Connection,
-    mintStr: string,
-    clusterString: 'mainnet' | 'devnet',
-    owner: PublicKey, // Ensuring owner is the 4th parameter as called from page.tsx
-    delayMs: number = DEFAULT_RPC_REQUEST_DELAY_MS // delayMs is the 5th parameter
+  connection: Connection,
+  tokenMintAddress: string, 
+  baseMintToPairStr: string, // e.g., NATIVE_MINT.toBase58()   
+  cluster: "mainnet" | "devnet", 
+  progressCallback?: (message: string) => void
 ): Promise<DiscoveredPoolDetailed[]> {
-    if (!mintStr) {
-        console.error('[poolFinder] Token mint string (mintStr) is required.');
-        return [];
+
+  progressCallback?.(`[PoolFinder] Using direct adaptation of findPoolTest.ts for ${cluster}`);
+  console.log(`[poolFinder] Using direct adaptation of findPoolTest.ts for ${cluster}`);
+  
+  if (!tokenMintAddress) {
+    console.warn("[poolFinder] tokenMintAddress is undefined or empty.");
+    progressCallback?.("[PoolFinder] Error: Token Mint Address is missing.");
+    return [];
+  }
+   if (!baseMintToPairStr) {
+    console.warn("[poolFinder] baseMintToPairStr is undefined or empty.");
+    progressCallback?.("[PoolFinder] Error: Base Mint to Pair is missing.");
+    return [];
+  }
+
+  const foundPools: DiscoveredPoolDetailed[] = [];
+  const delayMs = 200; // Delay to help with potential rate limits when fetching vault details
+
+  progressCallback?.(`[PoolFinder] Initializing Raydium SDK for ${cluster}...`);
+  console.log(`[poolFinder] Initializing Raydium SDK on ${cluster}…`);
+
+  let sdk: Raydium;
+  try {
+    sdk = await Raydium.load({
+      connection,
+      cluster: cluster, 
+      disableLoadToken: true, 
+      disableFeatureCheck: true, 
+    });
+    console.log('[poolFinder] Raydium SDK V2 loaded successfully.');
+    progressCallback?.('[poolFinder] Raydium SDK V2 Loaded.');
+  } catch (e: any) {
+    console.error('[poolFinder] Failed to load Raydium SDK:', e);
+    progressCallback?.(`[PoolFinder] Error: Failed to load Raydium SDK: ${e.message}`);
+    toast.error(`SDK Load Error: ${e.message.substring(0, 50)}...`);
+    return [];
+  }
+
+  progressCallback?.(`[PoolFinder] Fetching pools for ${tokenMintAddress.substring(0,6)}... / ${baseMintToPairStr.substring(0,6)}...`);
+  console.log(`[poolFinder] Fetching pools for ${tokenMintAddress} / ${baseMintToPairStr} on ${cluster}...`);
+
+  try {
+    const { data: poolsFromApi } = await sdk.api.fetchPoolByMints({
+      mint1: tokenMintAddress,
+      mint2: baseMintToPairStr,
+    });
+
+    if (!poolsFromApi || poolsFromApi.length === 0) {
+      console.log('[poolFinder] No pools found by fetchPoolByMints.');
+      progressCallback?.('[PoolFinder] No pools found for the given pair.');
+      return [];
     }
-    // The original poolfindtest.ts does not use an owner for loading the SDK for this task.
-    // If this 'owner' is not strictly necessary for Raydium.load for these read operations,
-    // it could be a point of divergence. However, we are matching the call signature from page.tsx.
-    if (!owner) {
-        console.warn('[poolFinder] Owner PublicKey is expected by signature but was not provided.');
-    }
+    console.log(`[poolFinder] Found ${poolsFromApi.length} potential pool(s) from API.`);
+    progressCallback?.(`[PoolFinder] Found ${poolsFromApi.length} potential pool(s). Processing details...`);
 
-    console.log(`[poolFinder] Initializing Raydium SDK for cluster: ${clusterString}`);
-    let sdk: Raydium;
-    try {
-        sdk = await Raydium.load({
-            connection,
-            cluster: clusterString,
-            owner, // Pass owner to Raydium.load
-            disableLoadToken: true,
-            disableFeatureCheck: true,
-        });
-    } catch (sdkLoadError: any) {
-        console.error(`[poolFinder] Failed to load Raydium SDK:`, sdkLoadError);
-        throw new Error(`Raydium SDK load failed: ${sdkLoadError.message}`);
-    }
-    console.log('[poolFinder] Raydium SDK loaded successfully.');
+    for (const p of poolsFromApi) { // p is ApiPoolInfoV4
+      await sleep(delayMs); 
+      progressCallback?.(`[PoolFinder] Processing pool ${p.id.substring(0,6)}... (${p.type})`);
+      console.log('─'.repeat(40));
+      console.log(`[poolFinder] Pool ID      : ${p.id}`);
+      console.log(`[poolFinder] Program ID   : ${p.programId}`);
+      console.log(`[poolFinder] Type         : ${p.type}`); // 'Standard', 'Concentrated'
+      console.log(`[poolFinder] Price        : ${p.price}`);
+      console.log(`[poolFinder] TVL          : ${p.tvl}`);
+      console.log(`[poolFinder] Mint A       : ${p.mintA.address} (Symbol: ${p.mintA.symbol}, Decimals: ${p.mintA.decimals})`);
+      console.log(`[poolFinder] Mint B       : ${p.mintB.address} (Symbol: ${p.mintB.symbol}, Decimals: ${p.mintB.decimals})`);
+      console.log(`[poolFinder] LP Mint      : ${p.lpMint.address}`);
 
-    console.log(`[poolFinder] Fetching pools for token ${mintStr} paired with SOL (${NATIVE_MINT.toBase58()})`);
-    let poolsApiResult: ApiPoolInfo[] = [];
-    try {
-        const result = await sdk.api.fetchPoolByMints({
-            mint1: mintStr,
-            mint2: NATIVE_MINT.toBase58(),
-        });
-        poolsApiResult = result.data || [];
-    } catch (fetchError: any) {
-        console.error(`[poolFinder] Error fetching pools list via SDK API:`, fetchError);
-        return [];
-    }
 
-    if (!poolsApiResult || poolsApiResult.length === 0) {
-        console.log('[poolFinder] No pools found for the given mint pair from API result.');
-        return [];
-    }
-    // Ensure delayMs is treated as a number for logging and sleep
-    const actualDelayMs = Number(delayMs);
-    console.log(`[poolFinder] Found ${poolsApiResult.length} potential pool(s) from API. Processing sequentially with ${actualDelayMs}ms delays...`);
+      let detailedVaultA = p.vaultA?.toString() || 'N/A'; // Already on ApiPoolInfoV4
+      let detailedVaultB = p.vaultB?.toString() || 'N/A'; // Already on ApiPoolInfoV4
+      let poolTypeEnum: DiscoveredPoolDetailed['type'] = 'Unknown';
 
-    const detailedPools: DiscoveredPoolDetailed[] = [];
-    const NATIVE_MINT_STRING = NATIVE_MINT.toBase58();
-
-    for (const p of poolsApiResult) {
-        console.log('[poolFinder] ─'.repeat(40));
-        console.log(`[poolFinder] Processing pool ID: ${p.id} (Type: ${p.type})`);
-
-        await sleep(actualDelayMs); // Use the numeric delay
-
-        let determinedVaultA = 'N/A';
-        let determinedVaultB = 'N/A';
-        let lpMintAddress: string | undefined = undefined;
-        let specificPoolSdkInfo: any = p;
-
-        try {
-            if (p.type === 'Concentrated') {
-                console.log(`[poolFinder]   Fetching details for Concentrated pool ${p.id}...`);
-                const { poolInfo: clmmPoolInfo } = await sdk.clmm.getPoolInfoFromRpc(p.id) as { poolInfo: ClmmPoolInfo };
-                specificPoolSdkInfo = clmmPoolInfo;
-
-                const mintAFromPool = safeToBase58(clmmPoolInfo?.mintA?.address);
-                const mintBFromPool = safeToBase58(clmmPoolInfo?.mintB?.address);
-
-                if (mintAFromPool === 'N/A' || mintBFromPool === 'N/A') {
-                     console.warn(`[poolFinder]   Concentrated pool ${p.id}: Could not reliably determine mint addresses from clmmPoolInfo. Vaults cannot be confidently mapped.`);
-                } else {
-                    if (mintAFromPool === mintStr && mintBFromPool === NATIVE_MINT_STRING) {
-                        determinedVaultA = safeToBase58(clmmPoolInfo.vaultA);
-                        determinedVaultB = safeToBase58(clmmPoolInfo.vaultB);
-                    } else if (mintBFromPool === mintStr && mintAFromPool === NATIVE_MINT_STRING) {
-                        determinedVaultA = safeToBase58(clmmPoolInfo.vaultB);
-                        determinedVaultB = safeToBase58(clmmPoolInfo.vaultA);
-                    } else {
-                        console.warn(`[poolFinder]   Concentrated pool ${p.id}: Mints (${mintAFromPool}, ${mintBFromPool}) do not match expected pair (${mintStr}, ${NATIVE_MINT_STRING}). Vaults cannot be confidently mapped.`);
-                    }
-                }
-            } else if (p.type === 'Standard') {
-                console.log(`[poolFinder]   Fetching details for Standard pool ${p.id}...`);
-                const poolPubkey = new PublicKey(p.id);
-                const keys = await sdk.liquidity.getAmmPoolKeys(poolPubkey) as AmmPoolKeys;
-                specificPoolSdkInfo = keys;
-                lpMintAddress = safeToBase58(keys.lpMint);
-
-                const keyBaseMintStr = safeToBase58(keys.baseMint);
-                const keyQuoteMintStr = safeToBase58(keys.quoteMint);
-
-                if (keyBaseMintStr !== 'N/A' && keyQuoteMintStr !== 'N/A') {
-                    if (keyBaseMintStr === mintStr && keyQuoteMintStr === NATIVE_MINT_STRING) {
-                        determinedVaultA = safeToBase58(keys.baseVault);
-                        determinedVaultB = safeToBase58(keys.quoteVault);
-                    } else if (keyQuoteMintStr === mintStr && keyBaseMintStr === NATIVE_MINT_STRING) {
-                        determinedVaultA = safeToBase58(keys.quoteVault);
-                        determinedVaultB = safeToBase58(keys.baseVault);
-                    } else {
-                         console.warn(`[poolFinder]   Standard pool ${p.id}: SDK key mints (Base: ${keyBaseMintStr}, Quote: ${keyQuoteMintStr}) do not match user's pair. Vaults cannot be confidently mapped to user's token vs SOL.`);
-                    }
-                } else {
-                     console.warn(`[poolFinder]   Standard pool ${p.id}: Could not determine base/quote mints from SDK keys. Vaults cannot be confidently mapped to user's token vs SOL.`);
-                }
-            } else {
-                console.warn(`[poolFinder]   Unknown or unhandled pool type: ${p.type} for pool ${p.id}`);
-                continue;
-            }
-
-            if (determinedVaultA !== 'N/A' && determinedVaultB !== 'N/A') {
-                console.log(`[poolFinder]     Token Vault (for ${mintStr.substring(0, 6)}...): ${determinedVaultA}`);
-                console.log(`[poolFinder]     SOL Vault (for SOL): ${determinedVaultB}`);
-                if (lpMintAddress && lpMintAddress !== 'N/A') console.log(`[poolFinder]     LP Mint: ${lpMintAddress}`);
-
-                detailedPools.push({
-                    id: p.id,
-                    programId: p.programId,
-                    type: p.type,
-                    price: p.price,
-                    tvl: p.tvl,
-                    mintA: mintStr,
-                    mintB: NATIVE_MINT_STRING,
-                    vaultA: determinedVaultA,
-                    vaultB: determinedVaultB,
-                    rawSdkPoolInfo: specificPoolSdkInfo,
-                    lpMint: (lpMintAddress === 'N/A' ? undefined : lpMintAddress)
-                });
-            } else {
-                console.warn(`[poolFinder] ⚠️ Could not confidently assign vaults for pool ${p.id} (Type: ${p.type}) to match required mintA/mintB structure.`);
-            }
-
-        } catch (err: any) {
-            console.error(`[poolFinder] ⚠️ Error processing details for pool ${p.id} (Type: ${p.type}): ${err.message}`, err.stack ? err.stack.substring(0, 300) : '');
+      try {
+        if (p.type === 'Concentrated') {
+          poolTypeEnum = 'CLMM';
+          console.log('[poolFinder] ℹ️ Processing Concentrated pool details…');
+          const { poolInfo: clmmPoolInfo } = await sdk.clmm.getPoolInfoFromRpc(p.id);
+          detailedVaultA = clmmPoolInfo.vaultA.toBase58();
+          detailedVaultB = clmmPoolInfo.vaultB.toBase58();
+          console.log(`[poolFinder] CLMM Vault A : ${detailedVaultA}`);
+          console.log(`[poolFinder] CLMM Vault B : ${detailedVaultB}`);
+        } else if (p.type === 'Standard') { // Standard includes AMMv4, AMMv5 (CPMM is usually devnet only)
+          poolTypeEnum = 'Standard';
+          console.log('[poolFinder] ℹ️ Processing Standard pool details (vaults already on ApiPoolInfoV4)...');
+          // Vaults A and B are directly on ApiPoolInfoV4 for standard pools.
+          // If you needed to reconstruct full AmmPoolKeys for other operations:
+          // const poolPubkey = new PublicKey(p.id);
+          // const keys = await sdk.liquidity.getAmmPoolKeys(poolPubkey);
+          // detailedVaultA = keys.baseVault.toBase58(); // or keys.vault.A
+          // detailedVaultB = keys.quoteVault.toBase58(); // or keys.vault.B
+          console.log(`[poolFinder] Standard Vault A : ${detailedVaultA}`);
+          console.log(`[poolFinder] Standard Vault B : ${detailedVaultB}`);
+        } else {
+            console.warn(`[poolFinder] Pool ${p.id}: Unhandled pool type for detailed vault fetching: ${p.type}`);
         }
+      } catch (err: any) {
+        console.error(`[poolFinder] ⚠️ Error fetching detailed vault info for pool ${p.id}:`, err.message);
+        progressCallback?.(`[PoolFinder] Error fetching vault details for ${p.id.substring(0,6)}`);
+        // Continue to add the pool with basic info if vault fetching fails
+      }
+      
+      const discoveredPool: DiscoveredPoolDetailed = {
+        id: p.id,
+        type: poolTypeEnum,
+        mintA: p.mintA.address.toString(),
+        mintB: p.mintB.address.toString(),
+        vaultA: detailedVaultA, 
+        vaultB: detailedVaultB,
+        lpMint: p.lpMint.address.toString(),
+        tvl: p.tvl,
+        price: parseFloat(p.price.toFixed(p.mintB.decimals > 0 ? p.mintB.decimals : 6)),
+        programId: p.programId,
+        rawSdkPoolInfo: p, 
+        baseSymbol: p.mintA.symbol || 'N/A',
+        quoteSymbol: p.mintB.symbol || 'N/A',
+        baseDecimals: p.mintA.decimals,
+        quoteDecimals: p.mintB.decimals,
+        reserveA: p.mintAmountA?.toString() || '0', // From ApiPoolInfoV4
+        reserveB: p.mintAmountB?.toString() || '0', // From ApiPoolInfoV4
+      };
+      foundPools.push(discoveredPool);
+      console.log(''); // Newline like in your script
     }
 
-    console.log(`[poolFinder] Finished processing. Returning ${detailedPools.length} pool(s) with assigned vault details.`);
-    return detailedPools;
+    if (foundPools.length > 0) {
+        progressCallback?.(`[PoolFinder] Successfully processed ${foundPools.length} pool(s).`);
+        toast.success(`Found ${foundPools.length} pool(s) for ${tokenMintAddress.substring(0,6)}...`);
+    } else {
+        progressCallback?.(`[PoolFinder] No suitable pools found after detailed processing for ${tokenMintAddress.substring(0,6)}...`);
+    }
+
+  } catch (error: any) {
+    console.error('[poolFinder] Error during pool fetching or processing:', error);
+    progressCallback?.(`[PoolFinder] Error: ${error.message}`);
+    toast.error(`PoolFinder Error: ${error.message.substring(0,100)}...`);
+  }
+
+  console.log(`[poolFinder] Search complete for ${cluster}. Found ${foundPools.length} pools for ${tokenMintAddress}.`);
+  return foundPools;
 }
+

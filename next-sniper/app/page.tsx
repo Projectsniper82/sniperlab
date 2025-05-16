@@ -8,7 +8,8 @@ import React, { useEffect, useState, useMemo, useCallback } from 'react';
 // Solana Web3 & SPL Token
 import { Connection, Keypair, PublicKey, Transaction, VersionedTransaction, TransactionMessage, TransactionInstruction } from '@solana/web3.js';
 import { NATIVE_MINT, getMint } from '@solana/spl-token';
-import { getCreatePoolKeys } from '@raydium-io/raydium-sdk-v2';
+// Only getCreatePoolKeys needed here if poolFinder handles SDK init for pool finding
+import { getCreatePoolKeys } from '@raydium-io/raydium-sdk-v2'; 
 import BN from 'bn.js';
 import Decimal from 'decimal.js';
 
@@ -18,18 +19,19 @@ import { useNetwork, NetworkType } from '@/context/NetworkContext';
 // Utils
 import {
     MAINNET_AMM_V4_PROGRAM_ID,
-    DEVNET_AMM_V4_PROGRAM_ID, // Used for Mainnet AMMv4 derivation if selectedPool is of that type
+    DEVNET_AMM_V4_PROGRAM_ID, 
     MAINNET_AMM_V4_CONFIG_ID_STR,
-    DEVNET_AMM_V4_CONFIG_ID_STR, // Used for Devnet CPMM derivation
-    DEVNET_CREATE_POOL_PROGRAM_ID // Used for Devnet CPMM derivation
+    DEVNET_AMM_V4_CONFIG_ID_STR, 
+    DEVNET_CREATE_POOL_PROGRAM_ID 
 } from '@/utils/raydiumConsts';
 import { mintTokenWithPhantomWallet } from '@/utils/mintWithPhantom';
-import { initRaydiumSdk } from '@/utils/raydiumSdkAdapter';
+import { initRaydiumSdk } from '@/utils/raydiumSdkAdapter'; 
 import {
     checkRaydiumDependencies,
     getInstallationInstructions
 } from '@/utils/dependencyChecker';
-import { fetchRaydiumPoolsFromSDK, DiscoveredPoolDetailed } from '@/utils/poolFinder';
+// Use the new poolFinder based on your findPoolTest.ts script
+import { fetchRaydiumPoolsFromSDK, DiscoveredPoolDetailed } from '@/utils/poolFinder'; 
 
 // Components
 import WalletConnect from '@/components/WalletConnect';
@@ -119,7 +121,6 @@ export default function HomePage() {
     const [selectedPool, setSelectedPool] = useState<DiscoveredPoolDetailed | null>(null);
     const [isPoolListCollapsed, setIsPoolListCollapsed] = useState<boolean>(false);
 
-
     useEffect(() => {
         const { isReady, missingDependencies } = checkRaydiumDependencies();
         if (!isReady) {
@@ -166,19 +167,20 @@ export default function HomePage() {
         let lpMintToQuery: PublicKey | null = null;
         let vaultAAddressToQuery: PublicKey | null = null;
         let vaultBAddressToQuery: PublicKey | null = null;
-        let poolMintAString: string = ''; // Will be SOL or Token
-        let poolMintBString: string = ''; // Will be Token or SOL
+        let poolMintAString: string = ''; 
+        let poolMintBString: string = ''; 
     
         if (selectedPool) {
             console.log("[fetchLpTokenDetails] Using selectedPool:", selectedPool.id);
             localNotificationMessage = `Workspaceing LP details for selected pool ${selectedPool.id.substring(0,6)}...`;
             setNotification({ show: true, message: localNotificationMessage, type: 'info' });
 
-            if (selectedPool.rawSdkPoolInfo && (selectedPool.rawSdkPoolInfo as any).lpMint) {
-                try { lpMintToQuery = new PublicKey((selectedPool.rawSdkPoolInfo as any).lpMint); } catch (e) { /* ignore error, will fallback */ }
-            }
-            // If lpMint still not found from rawSdkPoolInfo, it might be in the top-level of selectedPool for some pool types
-            if (!lpMintToQuery && (selectedPool as any).lpMint) {
+            const rawInfo = selectedPool.rawSdkPoolInfo as any; 
+            if (rawInfo?.lpMint?.address) { 
+                try { lpMintToQuery = new PublicKey(rawInfo.lpMint.address); } catch (e) { /* ignore */ }
+            } else if (rawInfo?.lpMint && typeof rawInfo.lpMint === 'string') { 
+                 try { lpMintToQuery = new PublicKey(rawInfo.lpMint); } catch (e) { /* ignore */ }
+            } else if ((selectedPool as any).lpMint) { 
                  try { lpMintToQuery = new PublicKey((selectedPool as any).lpMint); } catch (e) { /* ignore */ }
             }
 
@@ -186,15 +188,12 @@ export default function HomePage() {
             try { vaultBAddressToQuery = new PublicKey(selectedPool.vaultB); } catch (e) { /* ... */ }
             poolMintAString = selectedPool.mintA;
             poolMintBString = selectedPool.mintB;
-
         }
         
-        // Fallback or if selectedPool didn't provide all info (especially lpMint)
         if (!lpMintToQuery || !vaultAAddressToQuery || !vaultBAddressToQuery || !poolMintAString || !poolMintBString) {
-            console.log("[fetchLpTokenDetails] Deriving pool keys as selectedPool info was insufficient or missing.");
+            console.log("[fetchLpTokenDetails] Deriving pool keys as selectedPool info was insufficient or missing (especially for Devnet).");
             const mintA_SOL = NATIVE_MINT;
             const mintB_Token = new PublicKey(tokenAddress);
-            // Use CREATE_POOL_PROGRAM_ID for Devnet CPMM pools, AMM_V4 for mainnet standard pools
             const cpmmProgramIdToUse = network === 'mainnet-beta' ? MAINNET_AMM_V4_PROGRAM_ID : DEVNET_CREATE_POOL_PROGRAM_ID;
             const feeConfigIdToUse = network === 'mainnet-beta' ? new PublicKey(MAINNET_AMM_V4_CONFIG_ID_STR) : new PublicKey(DEVNET_AMM_V4_CONFIG_ID_STR);
             try {
@@ -247,7 +246,7 @@ export default function HomePage() {
     
                 let totalSolInPoolBN: BN, totalTokenInPoolBN: BN;
                 const NATIVE_MINT_STR_UPPER = NATIVE_MINT.toBase58().toUpperCase();
-                const TOKEN_ADDRESS_STR_UPPER = tokenAddress.toUpperCase(); // Current token in input box
+                const TOKEN_ADDRESS_STR_UPPER = tokenAddress.toUpperCase(); 
                 const POOL_MINT_A_STR_UPPER = poolMintAString.toUpperCase();
                 const POOL_MINT_B_STR_UPPER = poolMintBString.toUpperCase();
                 
@@ -283,7 +282,6 @@ export default function HomePage() {
             setNotification({ show: true, message: `Failed to fetch LP details: ${err.message ? err.message.substring(0,70) : 'Unknown error'}...`, type: 'error' });
             setLpTokenBalance('0'); setUserPairedSOL(0); setUserPairedToken(0); setTotalLpSupply('0'); setLpTokenDecimals(0);
         } finally {
-            // Clear notification only if it's the one we set, to avoid clearing other transient messages
             setTimeout(() => setNotification(prev => prev.message.startsWith("Fetching LP details") || prev.message.includes("LP details loaded") ? { show: false, message: '', type: '' } : prev), 4000);
         }
     }, [wallet, tokenAddress, connection, tokenInfo, network, selectedPool, setNotification]);
@@ -303,7 +301,8 @@ export default function HomePage() {
                 const pkInstance = walletAdapter.publicKey instanceof PublicKey ? walletAdapter.publicKey : new PublicKey(walletAdapter.publicKey.toString());
                 const bal = await connection.getBalance(pkInstance);
                 setSolBalance(bal / 1e9);
-                await initRaydiumSdk(walletAdapter, connection, network);
+                
+                await initRaydiumSdk(walletAdapter, connection, network); 
 
                 if (tokenAddress) { 
                     await fetchTokenBalance(pkInstance, new PublicKey(tokenAddress));
@@ -329,7 +328,6 @@ export default function HomePage() {
             setSolBalance(bal / 1e9);
             if (tokenAddress && tokenInfo) {
                 await fetchTokenBalance(pkInstance, new PublicKey(tokenAddress));
-                // Always try to fetch LP token details, it will use selectedPool or derive
                 await fetchLpTokenDetails(); 
             } else {
                 setTokenBalance('0');
@@ -413,12 +411,14 @@ export default function HomePage() {
     }, [tokenInfo]);
 
     const handleFetchAndDisplayPools = useCallback(async (addressToFetch: string) => {
-        if (!addressToFetch || !wallet?.publicKey) {
+        if (!addressToFetch || !wallet?.publicKey || !connection) { 
             setDiscoveredPools([]); setSelectedPool(null);
             if (addressToFetch && !wallet?.publicKey) {
                 setNotification({ show: true, message: "Please connect your wallet to fetch pools.", type: 'info' });
-                setTimeout(() => setNotification(prev => prev.message.includes("Please connect") ? { show: false, message: '', type: '' } : prev), 3000);
+            } else if (!connection) {
+                setNotification({ show: true, message: "Connection not available.", type: 'error' });
             }
+            setTimeout(() => setNotification(prev => prev.message.includes("Please connect") || prev.message.includes("Connection not") ? { show: false, message: '', type: '' } : prev), 3000);
             return;
         }
 
@@ -428,31 +428,34 @@ export default function HomePage() {
         setNotification({ show: true, message: loadingMsg, type: 'info' });
 
         try {
-            const sdkCluster = network === 'mainnet-beta' ? 'mainnet' : 'devnet';
-            const ownerPk = wallet.publicKey instanceof PublicKey 
-                ? wallet.publicKey 
-                : new PublicKey(wallet.publicKey.toString());
+            const clusterForPoolFinder: "mainnet" | "devnet" = network === 'mainnet-beta' ? 'mainnet' : 'devnet';
             
-            console.log(`[Page] Calling fetchRaydiumPoolsFromSDK with: token=${addressToFetch}, cluster=${sdkCluster}, owner=${ownerPk.toBase58()}`);
+            console.log(`[Page] Calling new fetchRaydiumPoolsFromSDK for token: ${addressToFetch} on cluster: ${clusterForPoolFinder}`);
+            
             const pools = await fetchRaydiumPoolsFromSDK(
-                connection, addressToFetch, sdkCluster, ownerPk
+                connection,
+                addressToFetch,
+                NATIVE_MINT.toBase58(), 
+                clusterForPoolFinder, // This is now correctly typed and passed
+                (progressMessage: string) => { 
+                    console.log(`[PoolFinder Progress]: ${progressMessage}`);
+                }
             );
 
             if (pools.length > 0) {
                 setDiscoveredPools(pools);
                 setNotification({ show: true, message: `Found ${pools.length} pool(s) on ${network}.`, type: 'success' });
                 setIsPoolListCollapsed(false);
-                 // If only one pool is found on Devnet, auto-select it
-                 if (network === 'devnet' && pools.length === 1) {
+                 if (network === 'devnet' && pools.length === 1) { 
                     console.log("[Page] Auto-selecting the only discovered Devnet pool.");
-                    handlePoolSelection(pools[0]);
+                    handlePoolSelection(pools[0]); 
                 }
-
             } else {
                 setDiscoveredPools([]);
                 setNotification({ show: true, message: `No pools found for this token on ${network}.`, type: 'info' });
                 setIsPoolListCollapsed(false);
             }
+
         } catch (error: any) {
             console.error(`[Page] Error calling fetchRaydiumPoolsFromSDK on ${network}:`, error);
             const shortError = error.message?.substring(0, 100) || 'Unknown error fetching pools';
@@ -470,7 +473,7 @@ export default function HomePage() {
                 });
             }, 4000);
         }
-    }, [wallet, connection, network, setNotification, setErrorMessage]); // Removed handlePoolSelection from deps to avoid re-triggering
+    }, [wallet, connection, network, setNotification, setErrorMessage]); 
 
 
     useEffect(() => {
@@ -500,11 +503,16 @@ export default function HomePage() {
 
     useEffect(() => {
         if (tokenInfo && tokenAddress && wallet?.publicKey) {
-            // Only fetch pools if not on devnet OR if on devnet and no pool is selected yet (to allow auto-selection of single pool)
-            if (network !== 'devnet' || (network === 'devnet' && !selectedPool && discoveredPools.length === 0) ) {
-                 handleFetchAndDisplayPools(tokenAddress);
-            } else if (network === 'devnet' && selectedPool) {
-                console.log("[Page] On Devnet with a selected pool, skipping redundant pool fetch.");
+            if (network === 'mainnet-beta') {
+                console.log("[Page Mainnet Pool Trigger] Conditions met. Calling handleFetchAndDisplayPools.");
+                handleFetchAndDisplayPools(tokenAddress);
+            } else if (network === 'devnet') { 
+                if (!selectedPool && discoveredPools.length === 0) {
+                    console.log("[Page Devnet Pool Trigger] Conditions met. Calling handleFetchAndDisplayPools.");
+                    handleFetchAndDisplayPools(tokenAddress);
+                } else if (selectedPool) {
+                    console.log("[Page Devnet Pool Trigger] On Devnet with a selected pool, or pools already discovered. Skipping redundant pool fetch.");
+                }
             }
         } else if (!wallet?.publicKey && tokenAddress) {
             setDiscoveredPools([]); setSelectedPool(null);
@@ -513,11 +521,10 @@ export default function HomePage() {
         } else {
             setDiscoveredPools([]); setSelectedPool(null);
         }
-    }, [tokenInfo, tokenAddress, wallet?.publicKey?.toString(), network, handleFetchAndDisplayPools, selectedPool, discoveredPools.length]);
+    }, [tokenInfo, tokenAddress, wallet?.publicKey?.toString(), network, handleFetchAndDisplayPools, selectedPool, discoveredPools.length]); 
 
 
     useEffect(() => {
-        // Fetch LP details if tokenInfo is available AND (a selectedPool exists OR we are on devnet where we derive)
         const canFetch = tokenInfo && 
                          tokenInfo.isInitialized && 
                          typeof tokenInfo.decimals === 'number' && 
@@ -539,7 +546,7 @@ export default function HomePage() {
     const handlePoolSelection = (pool: DiscoveredPoolDetailed) => {
         console.log("[Page] Pool selected:", pool);
         setSelectedPool(pool);
-        setIsPoolListCollapsed(true); // Collapse list after selection
+        setIsPoolListCollapsed(true); 
         setNotification({ 
             show: true, 
             message: `Pool selected: ${pool.id.substring(0,6)}...\nTVL: $${Number(pool.tvl).toLocaleString()}`, 
@@ -618,7 +625,7 @@ export default function HomePage() {
                                 publicKey: pkForMinting,
                                 signTransaction: async (tx: Transaction): Promise<Transaction> => {
                                     console.log("[Mint Adapter.signTransaction] Legacy tx received by adapter for signing by wallet:", tx);
-                                    const signedResultFromWallet = await wallet.signTransaction(tx); // This is the actual wallet provider call
+                                    const signedResultFromWallet = await wallet.signTransaction(tx); 
                                     console.log("[Mint Adapter.signTransaction] Raw result from wallet.signTransaction:", signedResultFromWallet);
 
                                     if (signedResultFromWallet instanceof Transaction) {
@@ -649,7 +656,6 @@ export default function HomePage() {
                                         });
                                        
                                         const finalSignaturesMap = new Map<string, Buffer>();
-                                        // Prioritize signatures from the wallet's response, as it should be the most complete.
                                         if (Array.isArray(signedResultFromWallet.signatures)) {
                                             signedResultFromWallet.signatures.forEach((sigInfo: any) => {
                                                 if (sigInfo.signature && sigInfo.publicKey) { 
@@ -658,12 +664,10 @@ export default function HomePage() {
                                                 }
                                             });
                                         }
-                                        // Ensure original tx signatures (like mintKeypair's) are also included if not already present
-                                        // (though Phantom's response should ideally contain all relevant signatures it processed/added)
                                         tx.signatures.forEach(sigPair => {
                                             if (sigPair.signature && sigPair.publicKey) {
                                                 const pkStr = sigPair.publicKey.toBase58();
-                                                if (!finalSignaturesMap.has(pkStr)) { // Add only if not already set from wallet's response
+                                                if (!finalSignaturesMap.has(pkStr)) { 
                                                     console.log(`[Mint Adapter.signTransaction] Adding signature from original tx for ${pkStr} as it was not in wallet's direct response signatures list.`);
                                                     finalSignaturesMap.set(pkStr, sigPair.signature);
                                                 }
@@ -766,11 +770,14 @@ export default function HomePage() {
                             />
                         </div>
                         <div className="md:col-span-2">
+                            {/* Props for LiveTokenChart - network prop removed */}
                             <LiveTokenChart
                                 tokenMint={tokenAddress}
-                                tokenDecimals={tokenInfo.decimals}
-                                tokenSupply={tokenInfo.supply}
+                                tokenDecimals={tokenInfo.decimals} 
+                                tokenSupply={tokenInfo.supply}   
                                 connection={connection}
+                                isPoolSelected={!!selectedPool}   
+                                poolId={selectedPool?.id}         
                             />
                         </div>
                     </div>
@@ -850,7 +857,7 @@ export default function HomePage() {
                         wallet={wallet}
                         connection={connection}
                         tokenAddress={tokenAddress}
-                        tokenDecimals={tokenInfo.decimals}
+                        tokenDecimals={tokenInfo.decimals} 
                         tokenBalance={tokenBalance}
                         solBalance={solBalance}
                         refreshBalances={refreshBalances}
@@ -860,14 +867,15 @@ export default function HomePage() {
                         wallet={wallet}
                         connection={connection}
                         tokenAddress={tokenAddress}
-                        tokenDecimals={tokenInfo.decimals}
+                        tokenDecimals={tokenInfo.decimals} 
                         tokenBalance={tokenBalance}
                         solBalance={solBalance}
                         refreshBalances={refreshBalances}
                         subtractBalances={subtractBalances}
                         selectedPool={selectedPool}
                         setNotification={setNotification}
-                        network={network}
+                        network={network} 
+                        isPoolSelected={!!selectedPool}      
                     />
                 </div>
             ) : (
