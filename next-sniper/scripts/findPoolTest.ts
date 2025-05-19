@@ -65,13 +65,13 @@ async function main() {
 
         // New SDK format: nested under `vault.A` & `vault.B`
         if (keys.vault && keys.vault.A && keys.vault.B) {
-          console.log(`Vault A     : ${keys.vault.A}`);
-          console.log(`Vault B     : ${keys.vault.B}`);
+          console.log(`Base Vault  : ${keys.vault.A} (Base Token)`);
+          console.log(`Quote Vault : ${keys.vault.B} (Quote Token)`);
 
         // Fallback for older SDK versions: top-level baseVault/quoteVault
         } else if ('baseVault' in keys && 'quoteVault' in keys) {
-          console.log(`Vault A     : ${keys.baseVault.toBase58()}`);
-          console.log(`Vault B     : ${keys.quoteVault.toBase58()}`);
+          console.log(`Base Vault  : ${keys.baseVault.toBase58()} (Catana Token)`);
+          console.log(`Quote Vault : ${keys.quoteVault.toBase58()} (WSOL)`);
 
         } else {
           console.warn('⚠️ Unexpected keys structure:', keys);
@@ -89,7 +89,6 @@ main().catch(e => {
   console.error('❌ Script failed:', e);
   process.exit(1);
 });
-
 
 
 
