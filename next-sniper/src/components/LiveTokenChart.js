@@ -109,7 +109,7 @@ const aggregateHistoricalCandles = (rawTicks, intervalMs, maxCandles) => {
 
 // --- Main Chart Component ---
 export default function LiveTokenChart({
-  tokenMint, tokenDecimals, tokenSupply, connection, selectedPool // <-- ADD selectedPool HERE
+  tokenMint, tokenDecimals, tokenSupply, connection, selectedPool, network // <-- ADD selectedPool HERE
 }) {
   const [selectedCandleIntervalMs, setSelectedCandleIntervalMs] = useState(INITIAL_CANDLE_INTERVAL_MS);
   const [chartMode, setChartMode] = useState('price'); 
