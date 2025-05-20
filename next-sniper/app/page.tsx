@@ -482,18 +482,27 @@ export default function HomePage() {
 
 
     // *** THIS IS THE PRIMARY useEffect FOR MANAGING selectedPool BASED ON NETWORK ***
-    useEffect(() => {
+  useEffect(() => {
         const walletPublicKeyString = wallet?.publicKey?.toString();
-        // This will re-run if the content of simulatedPoolStore changes and causes a re-render,
-        // OR when other major dependencies change.
         const simPoolFromStore = getSimulatedPool(); 
 
-        if (network === 'devnet') {
-            console.log("[app/page.tsx DEVNET_POOL_LOGIC] Devnet mode active.");
-            if (discoveredPools.length > 0) setDiscoveredPools([]); 
-            if (!isPoolListCollapsed) setIsPoolListCollapsed(true); 
+        // Initial state log for this run of the useEffect
+        console.log('[page.tsx useEffect_NetworkPoolLogic - START] Running. Network:', network, 'Token Address:', tokenAddress, 'Wallet PK:', walletPublicKeyString);
+        console.log('[page.tsx useEffect_NetworkPoolLogic - START] Current simPoolFromStore:', JSON.stringify(simPoolFromStore, null, 2));
+        const selectedPoolBeforeLogic = selectedPool; // Capture state before changes
 
-            console.log("[app/page.tsx DEVNET_POOL_LOGIC] Store check. Current tokenAddress:", tokenAddress, "Pool in store:", simPoolFromStore);
+        if (network === 'devnet') {
+            console.log("[page.tsx useEffect_NetworkPoolLogic] Processing Devnet logic.");
+            if (discoveredPools.length > 0) {
+                console.log("[page.tsx useEffect_NetworkPoolLogic] DEVNET: Clearing discoveredPools as they are not used on Devnet.");
+                setDiscoveredPools([]); 
+            }
+            if (!isPoolListCollapsed) {
+                console.log("[page.tsx useEffect_NetworkPoolLogic] DEVNET: Collapsing pool list.");
+                setIsPoolListCollapsed(true); 
+            }
+
+            console.log("[page.tsx useEffect_NetworkPoolLogic] DEVNET: Store check. Current tokenAddress:", tokenAddress, "Pool in store ID:", simPoolFromStore?.id);
 
             if (tokenInfo && tokenAddress && walletPublicKeyString && connection) {
                 if (simPoolFromStore &&
@@ -503,44 +512,61 @@ export default function HomePage() {
                     simPoolFromStore.id &&
                     simPoolFromStore.rawSdkPoolInfo) {
                     
-                    console.log("[app/page.tsx DEVNET_POOL_LOGIC] Using SEEDED pool from store:", simPoolFromStore);
-                    if (selectedPool?.id !== simPoolFromStore.id || selectedPool?.type !== 'CPMM_DEVNET_SEEDED') {
+                    if (selectedPoolBeforeLogic?.id !== simPoolFromStore.id || selectedPoolBeforeLogic?.type !== 'CPMM_DEVNET_SEEDED') {
+                        console.log("[page.tsx useEffect_NetworkPoolLogic DEBUG] DEVNET: Auto-configuring selectedPool from validated simPoolFromStore. Old selectedPool ID:", selectedPoolBeforeLogic?.id, "New from store:", simPoolFromStore.id);
+                        console.log("[page.tsx useEffect_NetworkPoolLogic DEBUG] DEVNET: simPoolFromStore details:", JSON.stringify(simPoolFromStore, null, 2));
                         setSelectedPool(simPoolFromStore as DiscoveredPoolDetailed);
+                    } else {
+                        console.log("[page.tsx useEffect_NetworkPoolLogic DEBUG] DEVNET: selectedPool (ID:", selectedPoolBeforeLogic?.id, ") already matches simPoolFromStore. No change.");
                     }
                 } else {
-                    console.log("[app/page.tsx DEVNET_POOL_LOGIC] No suitable SEEDED pool in store for current token, or data incomplete. SLM should seed it.");
-                    if (selectedPool && selectedPool.type === 'CPMM_DEVNET_SEEDED') { // Clear if it was devnet seeded but no longer valid
+                    console.log("[page.tsx useEffect_NetworkPoolLogic DEBUG] DEVNET: No suitable SEEDED pool in store for current token, or data incomplete. SLM should seed it. Current simPoolFromStore type:", simPoolFromStore?.type, "isSeeded:", simPoolFromStore?.isSeeded);
+                    if (selectedPoolBeforeLogic && selectedPoolBeforeLogic.type === 'CPMM_DEVNET_SEEDED') { 
+                        console.log("[page.tsx useEffect_NetworkPoolLogic DEBUG] DEVNET: Clearing previously selected Devnet seeded pool (ID:", selectedPoolBeforeLogic.id, ") as it's no longer valid/found in store.");
                         setSelectedPool(null);
                     }
                 }
             } else {
-                 if (selectedPool) setSelectedPool(null);
+                 console.log("[page.tsx useEffect_NetworkPoolLogic DEBUG] DEVNET: Missing tokenInfo, tokenAddress, wallet, or connection. Current selectedPool Type:", selectedPoolBeforeLogic?.type);
+                 if (selectedPoolBeforeLogic && selectedPoolBeforeLogic.type === 'CPMM_DEVNET_SEEDED') {
+                    console.log("[page.tsx useEffect_NetworkPoolLogic DEBUG] DEVNET: Conditions not met, clearing Devnet seeded pool (ID:", selectedPoolBeforeLogic.id, ")");
+                    setSelectedPool(null);
+                 }
             }
 
         } else if (network === 'mainnet-beta') {
-            console.log("[app/page.tsx MAINNET_POOL_LOGIC] Mainnet mode active.");
-            if (selectedPool && selectedPool.type === 'CPMM_DEVNET_SEEDED') {
+            console.log("[page.tsx useEffect_NetworkPoolLogic] Processing Mainnet logic.");
+            if (selectedPoolBeforeLogic && selectedPoolBeforeLogic.type === 'CPMM_DEVNET_SEEDED') {
+                console.log("[page.tsx useEffect_NetworkPoolLogic DEBUG] MAINNET: Clearing Devnet-seeded selectedPool (ID:", selectedPoolBeforeLogic.id, ") due to network switch to Mainnet.");
                 setSelectedPool(null); 
             }
             if (tokenInfo && tokenAddress && walletPublicKeyString) {
+                // This will trigger handleFetchAndDisplayPools, which has its own logs.
+                // selectedPool for mainnet is set by handlePoolSelection when user clicks.
+                console.log("[page.tsx useEffect_NetworkPoolLogic] MAINNET: Conditions met (tokenInfo, tokenAddress, wallet), calling handleFetchAndDisplayPools for token:", tokenAddress);
                 handleFetchAndDisplayPools(tokenAddress); 
             } else {
-                if (discoveredPools.length > 0) setDiscoveredPools([]);
-                if (selectedPool && selectedPool.type !== 'CPMM_DEVNET_SEEDED') { 
-                    // Don't clear if it's a user-selected mainnet pool unless token/wallet changes
-                } else if (selectedPool) { // It was a devnet pool or conditions changed
-                    setSelectedPool(null);
+                console.log("[page.tsx useEffect_NetworkPoolLogic] MAINNET: Conditions NOT met for fetching pools (missing tokenInfo, tokenAddress, or wallet).");
+                if (discoveredPools.length > 0) {
+                    console.log("[page.tsx useEffect_NetworkPoolLogic] MAINNET: Clearing discoveredPools as conditions for fetch not met.");
+                    setDiscoveredPools([]);
                 }
+                // If it was a mainnet pool selected by user, don't clear it here just because tokenInfo might be momentarily null during a new token load.
+                // loadTokenInfo effect handles clearing selectedPool when tokenAddress changes or becomes invalid.
             }
         }
+        // Log the selectedPool state *after* this useEffect's logic has had a chance to run
+        // Note: setSelectedPool is async, so this log might show the value from *before* a pending update in this exact render cycle.
+        // For more accurate "after" state, you might need another useEffect that just logs selectedPool when it changes.
+        // However, the logs inside the conditional blocks for setSelectedPool are more direct for seeing what was set.
     }, [
         network,
         tokenAddress,
         tokenInfo,
         wallet?.publicKey?.toString(),
         connection,
-        handleFetchAndDisplayPools,
-        JSON.stringify(getSimulatedPool()) // React to store changes for devnet
+        handleFetchAndDisplayPools, // Ensure this is wrapped in useCallback in its definition
+        JSON.stringify(getSimulatedPool()) 
     ]);
 
     useEffect(() => {
@@ -558,15 +584,29 @@ export default function HomePage() {
         }
     }, [tokenInfo, wallet?.publicKey?.toString(), connection, selectedPool, fetchLpTokenDetails]);
     
-    const handlePoolSelection = (pool: DiscoveredPoolDetailed) => {
+const handlePoolSelection = (pool: DiscoveredPoolDetailed) => {
+        console.log('[page.tsx handlePoolSelection DEBUG] Function called. Current network:', network);
+        console.log('[page.tsx handlePoolSelection DEBUG] Pool object passed for selection (type, id, programId, rawSdkPoolInfo.config/ammConfig if present):', 
+            JSON.stringify({
+                id: pool?.id,
+                type: pool?.type,
+                programId: pool?.programId,
+                rawConfig: pool?.rawSdkPoolInfo?.config, // This is where CLMM's ammConfig would be if structured as `config`
+                rawFeeRate: pool?.rawSdkPoolInfo?.feeRate, // For standard pools
+                // For standard pools from ApiPoolInfo, pool.rawSdkPoolInfo.config was logged as undefined by poolFinder
+                // For CLMM pools from ApiPoolInfo+clmmRpc, pool.rawSdkPoolInfo.config should contain the CLMM ammConfig
+            }, null, 2)
+        );
+
         if (network === 'mainnet-beta') { 
+            console.log('[page.tsx handlePoolSelection DEBUG] MAINNET: Setting selectedPool with ID:', pool?.id, 'Type:', pool?.type);
             setSelectedPool(pool); 
             setIsPoolListCollapsed(true);
             const notifId = Date.now();
-            setNotification({ id: notifId, show: true, message: `Pool selected: ${pool.id.substring(0,6)}...`, type: 'info' });
+            setNotification({ id: notifId, show: true, message: `Pool selected: ${pool.id.substring(0,6)}... Type: ${pool.type}`, type: 'info' });
             setTimeout(() => setNotification(prev => (prev as any).id === notifId ? {show: false, message:'',type:''} : prev), 4000);
         } else {
-            console.warn("[handlePoolSelection] Manual pool selection is for Mainnet only.");
+            console.warn("[page.tsx handlePoolSelection DEBUG] Manual pool selection is for Mainnet only. No change to selectedPool. Current selectedPool ID:", selectedPool?.id);
         }
     };
 

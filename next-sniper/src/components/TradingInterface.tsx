@@ -159,16 +159,108 @@ function TradingInterface({
      }, [selectedPool, tokenDecimals]); // Add tokenDecimals as it's used in updatePoolData logic
 
 
-    const handleBuy = async () => {
-        console.log("[handleBuy] Initiated on network:", network);
-        console.log("[handleBuy] Current State:", { buyAmount, solBalance, tokenAddress, tokenDecimals, slippage, selectedPoolId: selectedPool?.id });
-        console.log("[handleBuy] Wallet Prop PK:", wallet?.publicKey?.toString());
+        const handleBuy = async () => {
+        // ***** ADD DETAILED LOGS FOR selectedPool HERE *****
+        console.log('------------------------------------------------------');
+        console.log('[TradingInterface DEBUG handleBuy] Swap initiated by user.');
+        console.log('[TradingInterface DEBUG handleBuy] Network prop:', network);
+        console.log('[TradingInterface DEBUG handleBuy] selectedPool prop received:', JSON.stringify(selectedPool, null, 2));
+        
+        if (selectedPool) {
+            console.log('[TradingInterface DEBUG handleBuy] --- Extracted from selectedPool ---');
+            console.log('[TradingInterface DEBUG handleBuy] selectedPool.id:', selectedPool.id);
+            console.log('[TradingInterface DEBUG handleBuy] selectedPool.type:', selectedPool.type);
+            console.log('[TradingInterface DEBUG handleBuy] selectedPool.programId:', selectedPool.programId);
+            
+            if (selectedPool.rawSdkPoolInfo) {
+                console.log('[TradingInterface DEBUG handleBuy] selectedPool.rawSdkPoolInfo exists.');
+                // For Standard pools, ApiPoolInfo.config was logged as undefined by poolFinder.
+                // For CLMM pools, poolFinder logs show rawSdkPoolInfo.config contains the ammConfig.
+                console.log('[TradingInterface DEBUG handleBuy] selectedPool.rawSdkPoolInfo.config (Standard or CLMM ammConfig):', JSON.stringify(selectedPool.rawSdkPoolInfo.config, null, 2));
+                console.log('[TradingInterface DEBUG handleBuy] selectedPool.rawSdkPoolInfo.feeRate (direct from ApiPoolInfo for Standard):', selectedPool.rawSdkPoolInfo.feeRate);
+            } else {
+                console.log('[TradingInterface DEBUG handleBuy] selectedPool.rawSdkPoolInfo is MISSING.');
+            }
+            console.log('[TradingInterface DEBUG handleBuy] --- End Extracted from selectedPool ---');
+        } else {
+            console.log('[TradingInterface DEBUG handleBuy] selectedPool prop is NULL or UNDEFINED.');
+        }
+        // **************************************************
+
+        // console.log("[handleBuy] Initiated on network:", network); // Original log, now covered above
+        console.log("[handleBuy] Current State (original log):", { buyAmount, solBalance, tokenAddress, tokenDecimals, slippage, selectedPoolId: selectedPool?.id });
+        console.log("[handleBuy] Wallet Prop PK (original log):", wallet?.publicKey?.toString());
 
         const buyAmountSOLFloat = parseFloat(buyAmount);
 
         if (isNaN(buyAmountSOLFloat) || buyAmountSOLFloat <= 0) {
             setErrorMessage("Please enter a valid SOL amount to buy");
             return;
+        }
+        if (buyAmountSOLFloat > solBalance) {
+            setErrorMessage("Not enough SOL balance");
+            return;
+        }
+        if (!selectedPool || !selectedPool.id) { // This check is crucial
+            setErrorMessage("No pool selected for trading.");
+            console.error('[TradingInterface CRITICAL handleBuy] Aborting: No pool selected or pool ID missing at decision point.');
+            setIsLoading(false); // Ensure loading is stopped
+            return;
+        }
+
+        setIsLoading(true);
+        setErrorMessage('');
+
+        try {
+            const poolIdToUse = selectedPool.id; // Relies on selectedPool being correctly set
+            const inputMint = NATIVE_MINT.toBase58();
+            
+            console.log(`[TradingInterface handleBuy] Using selected pool ID: ${poolIdToUse} (Type: ${selectedPool.type}) for SOL -> Token swap.`);
+            
+            const solLamportsIn = new BN(new Decimal(buyAmountSOLFloat).mul(1e9).toFixed(0));
+            const slippageDecimal = slippage / 100;
+
+            // Conditional logic based on pool type will eventually go here
+            // For now, we are logging to see what `selectedPool.type` is when this is called
+            if (selectedPool.type === "Standard" || selectedPool.type === "CPMM") {
+                console.log("[TradingInterface DEBUG handleBuy] Routing to swapRaydiumTokens (CPMM/Standard AMM logic) for pool type:", selectedPool.type);
+                // console.log("[handleBuy] Calling swapRaydiumTokens with (original log context):", { /* your existing log object for parameters */ }); // Covered by adapter logs
+                
+                const txSignature = await swapRaydiumTokens(
+                    wallet, connection, poolIdToUse, inputMint, solLamportsIn, slippageDecimal
+                );
+                setNotification({ show: true, message: `Buy successful! Tx: ${txSignature.substring(0, 10)}...`, type: 'success' });
+                console.log("[handleBuy] Standard/CPMM Buy swap successful, Tx:", txSignature);
+
+            } else if (selectedPool.type === "Concentrated") {
+                console.error("[TradingInterface DEBUG handleBuy] CLMM swap logic not yet implemented! Attempting to route to swapRaydiumTokens will fail or is incorrect.");
+                console.error("[TradingInterface DEBUG handleBuy] This confirms 'swapRaydiumTokens' (CPMM logic) is being called for a 'Concentrated' pool type.");
+                // To actually cause the error you saw for CLMM pools (JCTGZ...) through CPMM functions:
+                // const txSignature = await swapRaydiumTokens(
+                //     wallet, connection, poolIdToUse, inputMint, solLamportsIn, slippageDecimal
+                // );
+                // For now, let's prevent the call for CLMM to avoid confusion if adapter isn't ready for it, and explicitly state the misroute
+                setErrorMessage(`Swap for Concentrated pools (type: ${selectedPool.type}) not yet routed to correct CLMM swap function.`);
+                throw new Error(`CLMM swap logic not implemented / misrouted for pool type ${selectedPool.type}. CPMM function swapRaydiumTokens would have been called.`);
+
+            } else {
+                console.error(`[TradingInterface DEBUG handleBuy] Unknown pool type: "${selectedPool.type}". Cannot determine swap logic.`);
+                setErrorMessage(`Unknown pool type: ${selectedPool.type}`);
+                throw new Error(`Unknown pool type: ${selectedPool.type}`);
+            }
+            
+            await refreshBalances();
+            setBuyAmount('');
+            setExpectedBuyOutput(0);
+            console.log("[handleBuy] Post-swap operations completed successfully.");
+
+        } catch (error: any) {
+            console.error(`[ERROR] handleBuy Error on ${network} for pool ${selectedPool?.id} (Type: ${selectedPool?.type}):`, error);
+            setErrorMessage(`Buy Error: ${error.message || 'Unknown error'}`);
+            setNotification({ show: true, message: `Buy Failed: ${error.message?.substring(0,100)}...`, type: 'error' });
+        } finally {
+            setIsLoading(false);
+            setTimeout(() => setNotification(prev => (prev.message.includes("Buy successful") || prev.message.includes("Buy Failed")) ? {show: false, message: '', type: ''} : prev), 4000);
         }
         if (buyAmountSOLFloat > solBalance) {
             setErrorMessage("Not enough SOL balance");
