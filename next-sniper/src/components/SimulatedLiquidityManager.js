@@ -63,12 +63,25 @@ function SimulatedLiquidityManager({
     const [isCreatingPool, setIsCreatingPool] = useState(false);
     const [isAddingLiquidity, setIsAddingLiquidity] = useState(false);
     const [error, setError] = useState('');
-    
+
     // isUsingRaydium now determines if actual Raydium transactions are made for LP management.
     // For Devnet, when a pool is "seeded", we are reading its state, not necessarily creating it via this component.
     // This switch primarily affects the "Create LP" and "Add More LP" buttons' actions.
     const [isUsingRaydium, setIsUsingRaydium] = useState(true); // Default to true for Raydium SDK operations
-
+    useEffect(() => {
+        const simPool = getSimulatedPool();
+        if (
+            simPool &&
+            simPool.tokenAddress &&
+            tokenAddress &&
+            simPool.tokenAddress !== tokenAddress.toLowerCase()
+        ) {
+            setSimulatedPool(null);    // Clear global simulated pool
+            setExistingPoolInfo(null); // Clear local state
+            // Optional debug
+            console.log("[SimulatedLiquidityManager] Token changed, clearing simulated pool store/state");
+        }
+    }, [tokenAddress]);
     const estimatedTokenAmountUI = useMemo(() => {
         if (!tokenBalance || tokenDecimals === undefined || tokenDecimals === null) return 0;
         try {
@@ -90,7 +103,7 @@ function SimulatedLiquidityManager({
     useEffect(() => {
         async function seedDevnetPoolToStore() {
             // Clear local existingPoolInfo for this component; the store is the source of truth for other components.
-            setExistingPoolInfo(null); 
+            setExistingPoolInfo(null);
 
             if (network !== 'devnet' || !wallet?.publicKey || !connection || !tokenAddress || tokenDecimals === undefined || tokenDecimals === null) {
                 if (network !== 'devnet') { // If switched away from devnet
@@ -100,7 +113,7 @@ function SimulatedLiquidityManager({
                         setSimulatedPool(null);
                     }
                 } else {
-                     console.debug("[SimulatedLiquidityManager] Seed Devnet pool check skipped (not Devnet or missing critical data).");
+                    console.debug("[SimulatedLiquidityManager] Seed Devnet pool check skipped (not Devnet or missing critical data).");
                 }
                 return;
             }
@@ -126,7 +139,7 @@ function SimulatedLiquidityManager({
                     mintA: mintA_SOL,
                     mintB: mintB_Token,
                 });
-                
+
                 console.debug("[SimulatedLiquidityManager] Devnet Derived Pool Keys for seeding store:", JSON.stringify(derivedKeys, (k, v) => typeof v === 'bigint' ? v.toString() : v, 2));
 
                 const vaultASolBalanceInfo = await connection.getTokenAccountBalance(derivedKeys.vaultA, 'confirmed').catch(() => null);
@@ -141,7 +154,7 @@ function SimulatedLiquidityManager({
 
                 const solReserveBN = new BN(vaultASolBalanceInfo.value.amount);
                 const tokenReserveBN = new BN(vaultBTokenBalanceInfo.value.amount);
-                
+
                 const solReserveUi = new Decimal(solReserveBN.toString()).div(1e9);
                 const tokenReserveUi = new Decimal(tokenReserveBN.toString()).div(new Decimal(10).pow(tokenDecimals));
                 const price = tokenReserveUi.isZero() ? new Decimal(0) : solReserveUi.div(tokenReserveUi);
@@ -151,12 +164,12 @@ function SimulatedLiquidityManager({
                 try {
                     const lpMintInfo = await getMint(connection, derivedKeys.lpMint);
                     lpMintSupplyBN = new BN(lpMintInfo.supply.toString());
-                    if(lpDecimalsVal === 0 && lpMintInfo.decimals !==0) lpDecimalsVal = lpMintInfo.decimals; // Prefer fetched if derived was 0
-                     console.log(`[SimulatedLiquidityManager] LP Mint ${derivedKeys.lpMint.toBase58()} Supply: ${lpMintSupplyBN.toString()}, Decimals: ${lpDecimalsVal}`);
+                    if (lpDecimalsVal === 0 && lpMintInfo.decimals !== 0) lpDecimalsVal = lpMintInfo.decimals; // Prefer fetched if derived was 0
+                    console.log(`[SimulatedLiquidityManager] LP Mint ${derivedKeys.lpMint.toBase58()} Supply: ${lpMintSupplyBN.toString()}, Decimals: ${lpDecimalsVal}`);
                 } catch (lpError) {
                     console.warn(`[SimulatedLiquidityManager] Could not fetch LP mint info for ${derivedKeys.lpMint.toBase58()}, using defaults/derived:`, lpError);
                 }
-                
+
                 // Structure for simulatedPoolStore, needs to be consumable by TradingInterface and Chart
                 const poolInfoForStore = {
                     id: derivedKeys.poolId.toString(),
@@ -168,7 +181,7 @@ function SimulatedLiquidityManager({
                     mintB: tokenAddress, // Use original case for consistency if preferred by other components
                     vaultA: derivedKeys.vaultA.toString(),
                     vaultB: derivedKeys.vaultB.toString(),
-                    
+
                     // This rawSdkPoolInfo needs to be what swapRaydiumTokens expects
                     rawSdkPoolInfo: {
                         id: derivedKeys.poolId,
@@ -197,17 +210,17 @@ function SimulatedLiquidityManager({
                         mintDecimalA: 9, // SOL decimals
                         mintDecimalB: tokenDecimals,
                     },
-                    
+
                     // Keep these for compatibility with existing simulatedPoolStore consumers if any
                     tokenAddress: tokenAddress.toLowerCase(),
                     tokenDecimals: tokenDecimals,
                     tokenAmount: tokenReserveUi.toNumber(),
                     solAmount: solReserveUi.toNumber(),
-                    volume: 0, 
+                    volume: 0,
                     candles: [{ open: price.toNumber(), high: price.toNumber(), low: price.toNumber(), close: price.toNumber(), timestamp: Date.now() }],
-                    isSeeded: true, 
+                    isSeeded: true,
                     // Add raydiumPoolId for components that might use it directly, like old isRaydiumPool check
-                    raydiumPoolId: derivedKeys.poolId.toString(), 
+                    raydiumPoolId: derivedKeys.poolId.toString(),
                 };
 
                 console.log("[SimulatedLiquidityManager] Seeding Devnet pool info into simulatedPoolStore:", poolInfoForStore);
@@ -231,28 +244,25 @@ function SimulatedLiquidityManager({
 
     const handleCreateLiquidity = async () => {
         setError(''); setIsCreatingPool(true);
-        if (!wallet?.publicKey || !connection || !tokenAddress || tokenDecimals === undefined || !tokenBalance) { 
-            setError("Wallet/Connection/Token details missing for Create LP."); 
-            setIsCreatingPool(false); return; 
-        }
-        
-        // On Devnet, if a pool is already seeded (meaning it exists), prevent accidental re-creation via this button.
-        // User should use "Add More LP" or manage it elsewhere if this component isn't for creating *new* Devnet pools.
-        if (network === 'devnet' && existingPoolInfo && existingPoolInfo.isSeeded) {
-            setError("A Devnet pool already exists or is seeded. Use 'Add More LP' or manage via other means.");
-            setIsCreatingPool(false);
-            return;
+        if (!wallet?.publicKey || !connection || !tokenAddress || tokenDecimals === undefined || !tokenBalance) {
+            setError("Wallet/Connection/Token details missing for Create LP.");
+            setIsCreatingPool(false); return;
         }
 
+        // --- PATCH: Allow Devnet users to always try pool creation/recovery ---
+        // (Old block removed here!)
+
         try {
-            let rawTokenBalanceBN; 
-            try { rawTokenBalanceBN = new BN(tokenBalance); } 
-            catch(e) { setError(`Invalid tokenBalance format`); setIsCreatingPool(false); return; }
+            // ...rest of your code...
+
+            let rawTokenBalanceBN;
+            try { rawTokenBalanceBN = new BN(tokenBalance); }
+            catch (e) { setError(`Invalid tokenBalance format`); setIsCreatingPool(false); return; }
 
             if (rawTokenBalanceBN.isZero()) { setError("Token Balance is zero."); setIsCreatingPool(false); return; }
             const rawTokenAmountToSend = rawTokenBalanceBN.mul(new BN(tokenPercentage)).div(new BN(100));
             if (rawTokenAmountToSend.isZero()) { setError(`Calculated token amount to send is zero.`); setIsCreatingPool(false); return; }
-            
+
             const solAmountFloat = parseFloat(solAmount);
             if (isNaN(solAmountFloat) || solAmountFloat <= 0) { setError("Invalid or zero SOL amount."); setIsCreatingPool(false); return; }
             const solLamportsBN = new BN(new Decimal(solAmountFloat).mul(1e9).toFixed(0));
@@ -262,9 +272,9 @@ function SimulatedLiquidityManager({
             let result;
             if (isUsingRaydium) { // This implies on-chain creation attempt
                 if (network !== 'devnet') {
-                     setError("On-chain Raydium LP creation via this interface is intended for Devnet only.");
-                     setIsCreatingPool(false);
-                     return;
+                    setError("On-chain Raydium LP creation via this interface is intended for Devnet only.");
+                    setIsCreatingPool(false);
+                    return;
                 }
                 console.log("[SimulatedLiquidityManager] Creating ON-CHAIN Raydium pool (Devnet)...");
                 result = await createRaydiumPool(wallet, connection, tokenAddress, tokenDecimals, rawTokenAmountToSend, solLamportsBN);
@@ -273,25 +283,25 @@ function SimulatedLiquidityManager({
                 result = await createSimulatedLiquidityPool(wallet, tokenAddress, tokenDecimals, rawTokenAmountToSend, solLamportsBN, subtractBalances);
             }
 
-            const poolDataFromOp = result?.poolInfo || result?.poolKeys; 
+            const poolDataFromOp = result?.poolInfo || result?.poolKeys;
 
             if (poolDataFromOp && result?.signature) {
                 const isDataComplete = poolDataFromOp.tokenAddress && poolDataFromOp.tokenDecimals !== undefined && poolDataFromOp.id; // Added poolDataFromOp.id
-                if(!isDataComplete) { throw new Error("Pool data from operation is incomplete."); }
+                if (!isDataComplete) { throw new Error("Pool data from operation is incomplete."); }
 
                 setExistingPoolInfo(poolDataFromOp);
-                setSimulatedPool(poolDataFromOp); 
+                setSimulatedPool(poolDataFromOp);
 
-                alert(`✅ Pool operation successful! Sig: ${result.signature.substring(0,20)}...`);
+                alert(`✅ Pool operation successful! Sig: ${result.signature.substring(0, 20)}...`);
                 refreshBalances();
             } else {
                 throw new Error("Pool creation/simulation function did not return expected result (missing data or signature).");
             }
         } catch (error) {
-            console.error(`[SimulatedLiquidityManager] Create LP error:`, error); 
+            console.error(`[SimulatedLiquidityManager] Create LP error:`, error);
             setError(`Create LP Error: ${error.message || 'Unknown error'}`);
-        } finally { 
-            setIsCreatingPool(false); 
+        } finally {
+            setIsCreatingPool(false);
         }
     };
 
@@ -301,37 +311,37 @@ function SimulatedLiquidityManager({
         // The `existingPoolInfo` would be the one seeded from Devnet or created by this component.
         setError(''); setIsAddingLiquidity(true);
         if (!wallet?.publicKey || !connection) { setError("Wallet/Connection missing."); setIsAddingLiquidity(false); return; }
-        
+
         const currentPoolToAddTo = existingPoolInfo || getSimulatedPool(); // Prioritize local state, fallback to store
-        
-        if (!currentPoolToAddTo) { 
-            setError("No active pool found to add liquidity. Create or load one first."); 
-            setIsAddingLiquidity(false); return; 
+
+        if (!currentPoolToAddTo) {
+            setError("No active pool found to add liquidity. Create or load one first.");
+            setIsAddingLiquidity(false); return;
         }
-        if (!currentPoolToAddTo.tokenAddress || currentPoolToAddTo.tokenDecimals === undefined || !currentPoolToAddTo.id ) { 
-            setError("Active pool data is incomplete."); 
-            setIsAddingLiquidity(false); return; 
+        if (!currentPoolToAddTo.tokenAddress || currentPoolToAddTo.tokenDecimals === undefined || !currentPoolToAddTo.id) {
+            setError("Active pool data is incomplete.");
+            setIsAddingLiquidity(false); return;
         }
-        if (currentPoolToAddTo.tokenAddress.toLowerCase() !== tokenAddress.toLowerCase()) { 
-            setError("Loaded token does not match the active pool's token."); 
-            setIsAddingLiquidity(false); return; 
+        if (currentPoolToAddTo.tokenAddress.toLowerCase() !== tokenAddress.toLowerCase()) {
+            setError("Loaded token does not match the active pool's token.");
+            setIsAddingLiquidity(false); return;
         }
 
         try {
-            let rawTokenBalanceBN; 
-            try { rawTokenBalanceBN = new BN(tokenBalance); } 
-            catch(e) { setError(`Invalid tokenBalance format`); setIsAddingLiquidity(false); return; }
+            let rawTokenBalanceBN;
+            try { rawTokenBalanceBN = new BN(tokenBalance); }
+            catch (e) { setError(`Invalid tokenBalance format`); setIsAddingLiquidity(false); return; }
 
             if (rawTokenBalanceBN.isZero()) { setError("Token Balance is zero."); setIsAddingLiquidity(false); return; }
             const rawTokenAmountToAdd = rawTokenBalanceBN.mul(new BN(tokenPercentage)).div(new BN(100));
             if (rawTokenAmountToAdd.isZero()) { setError(`Calculated token amount to add is zero.`); setIsAddingLiquidity(false); return; }
-            
+
             const solAmountFloat = parseFloat(solAmount);
             if (isNaN(solAmountFloat) || solAmountFloat <= 0) { setError("Invalid SOL amount for adding liquidity."); setIsAddingLiquidity(false); return; }
             const solLamportsBN = new BN(new Decimal(solAmountFloat).mul(1e9).toFixed(0));
 
             console.log("[SimulatedLiquidityManager] Add LP Args:", { poolId: currentPoolToAddTo.id, rawTokenAmountToAdd: rawTokenAmountToAdd.toString(), solLamportsBN: solLamportsBN.toString(), isUsingRaydium, network });
-            
+
             let signature;
             let updatedPoolInfo = null;
 
@@ -339,9 +349,9 @@ function SimulatedLiquidityManager({
             // and that currentPoolToAddTo contains a valid `raydiumPoolId` or enough info.
             if (isUsingRaydium && currentPoolToAddTo.raydiumPoolId && currentPoolToAddTo.rawSdkPoolInfo) {
                 if (network !== 'devnet') {
-                     setError("On-chain Raydium LP addition via this interface is intended for Devnet only.");
-                     setIsAddingLiquidity(false);
-                     return;
+                    setError("On-chain Raydium LP addition via this interface is intended for Devnet only.");
+                    setIsAddingLiquidity(false);
+                    return;
                 }
                 console.log("[SimulatedLiquidityManager] Adding ON-CHAIN Raydium liquidity (Devnet)...");
                 // `addRaydiumLiquidity` function would need to be implemented in `raydiumSdkAdapter.js`
@@ -357,15 +367,15 @@ function SimulatedLiquidityManager({
                 console.log("[SimulatedLiquidityManager] Adding SIMULATED liquidity...");
                 const result = await addSimulatedLiquidityToPool(wallet, currentPoolToAddTo, rawTokenAmountToAdd, solLamportsBN, subtractBalances);
                 signature = result?.signature; // Assuming addSimulatedLiquidityToPool returns this structure
-                updatedPoolInfo = result?.updatedPoolInfo; 
+                updatedPoolInfo = result?.updatedPoolInfo;
             } else {
                 throw new Error("Cannot add liquidity - mode mismatch or pool keys missing for Raydium operation.");
             }
 
             if (signature) {
-                alert(`✅ Liquidity added! Sig: ${signature.substring(0,20)}...`);
+                alert(`✅ Liquidity added! Sig: ${signature.substring(0, 20)}...`);
                 if (updatedPoolInfo) {
-                    setExistingPoolInfo(updatedPoolInfo); 
+                    setExistingPoolInfo(updatedPoolInfo);
                     setSimulatedPool(updatedPoolInfo);
                 }
                 refreshBalances();
@@ -375,15 +385,15 @@ function SimulatedLiquidityManager({
             }
 
         } catch (error) {
-            console.error(`[SimulatedLiquidityManager] Add liquidity error:`, error); 
+            console.error(`[SimulatedLiquidityManager] Add liquidity error:`, error);
             setError(`Add LP Error: ${error.message || 'Unknown error'}`);
-        } finally { 
-            setIsAddingLiquidity(false); 
+        } finally {
+            setIsAddingLiquidity(false);
         }
     };
 
     const displayEstimatedToken = estimatedTokenAmountUI.toLocaleString(undefined, { maximumFractionDigits: tokenDecimals ?? 2 });
-    
+
     // Determine button states based on whether a pool is active (either from local state or store)
     // For Devnet, existingPoolInfo will be set if a pool is successfully seeded from on-chain.
     // For other modes/networks, it depends on explicit creation.
@@ -395,18 +405,18 @@ function SimulatedLiquidityManager({
         <div className="bg-gray-900 p-6 rounded-lg shadow-lg border border-gray-800">
             <div className="flex justify-between items-center mb-4">
                 <h2 className="text-xl font-bold text-white">
-                    {network === 'devnet' ? '🌊 Devnet Pool Management' : 
-                     isUsingRaydium ? '🌊 Raydium Liquidity (Mainnet - Placeholder)' : '💧 Simulated Liquidity'}
+                    {network === 'devnet' ? '🌊 Devnet Pool Management' :
+                        isUsingRaydium ? '🌊 Raydium Liquidity (Mainnet - Placeholder)' : '💧 Simulated Liquidity'}
                 </h2>
                 {activePoolForUI && activePoolForUI.id && (
                     <div className="px-3 py-1 bg-green-900 rounded-full text-green-400 text-xs font-medium">
-                        Pool Active: {activePoolForUI.id.substring(0,6)}...
+                        Pool Active: {activePoolForUI.id.substring(0, 6)}...
                         {activePoolForUI.isSeeded && network === 'devnet' ? " (Live)" : ""}
                     </div>
                 )}
             </div>
-            {error && ( <div className="mb-4 p-3 bg-red-900/50 border border-red-700 rounded text-red-300 text-sm break-words">{error}</div> )}
-            
+            {error && (<div className="mb-4 p-3 bg-red-900/50 border border-red-700 rounded text-red-300 text-sm break-words">{error}</div>)}
+
             {/* Inputs for SOL and Token Percentage */}
             <div className="mb-4">
                 <label className="block text-gray-400 text-sm mb-1" htmlFor="sol-amount-input-lp">SOL to Add/Create</label>
@@ -442,42 +452,42 @@ function SimulatedLiquidityManager({
 
             {/* Info box about current mode */}
             {network === 'devnet' ? (
-                 <div className="p-3 mb-4 bg-green-900/30 border border-green-700/50 rounded-lg">
+                <div className="p-3 mb-4 bg-green-900/30 border border-green-700/50 rounded-lg">
                     <div className="flex">
-                       <div className="text-green-400 mr-2 text-lg">ⓘ</div>
-                       <div className="text-green-300 text-sm"><p>Devnet mode: Automatically attempts to use existing on-chain standard CPMM pool. 'Create LP' will use Raydium SDK if no pool is seeded.</p></div>
+                        <div className="text-green-400 mr-2 text-lg">ⓘ</div>
+                        <div className="text-green-300 text-sm"><p>Devnet mode: Automatically attempts to use existing on-chain standard CPMM pool. 'Create LP' will use Raydium SDK if no pool is seeded.</p></div>
                     </div>
                 </div>
             ) : isUsingRaydium && network === 'mainnet-beta' ? (
                 <div className="p-3 mb-4 bg-yellow-900/30 border border-yellow-700/50 rounded-lg">
                     <div className="flex">
-                       <div className="text-yellow-400 mr-2 text-lg">⚠️</div>
-                       <div className="text-yellow-300 text-sm"><p>Mainnet Raydium operations via this UI are highly experimental/placeholder. Use with extreme caution.</p></div>
+                        <div className="text-yellow-400 mr-2 text-lg">⚠️</div>
+                        <div className="text-yellow-300 text-sm"><p>Mainnet Raydium operations via this UI are highly experimental/placeholder. Use with extreme caution.</p></div>
                     </div>
                 </div>
             ) : (
-                 <div className="p-3 mb-4 bg-purple-900/30 border border-purple-700/50 rounded-lg">
+                <div className="p-3 mb-4 bg-purple-900/30 border border-purple-700/50 rounded-lg">
                     <div className="flex">
-                       <div className="text-purple-400 mr-2 text-lg">ⓘ</div>
-                       <div className="text-purple-300 text-sm"><p>Simulation mode is active. No real transactions will be made.</p></div>
+                        <div className="text-purple-400 mr-2 text-lg">ⓘ</div>
+                        <div className="text-purple-300 text-sm"><p>Simulation mode is active. No real transactions will be made.</p></div>
                     </div>
                 </div>
             )}
-            
+
             {/* Action Buttons */}
             <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-4">
                 <button
                     onClick={handleCreateLiquidity}
                     disabled={
-                        isCreatingPool || 
+                        isCreatingPool ||
                         !canCreate || // Can only create if no pool is active/seeded
-                        !solAmount || parseFloat(solAmount) <= 0 || 
-                        !tokenAddress || 
+                        !solAmount || parseFloat(solAmount) <= 0 ||
+                        !tokenAddress ||
                         (network === 'mainnet-beta' && isUsingRaydium) // Disable actual mainnet creation via this UI for safety
                     }
                     className={`flex-1 py-3 px-4 rounded-lg flex items-center justify-center transition-colors duration-150 
                         ${isCreatingPool || !canCreate || !solAmount || parseFloat(solAmount) <= 0 || !tokenAddress || (network === 'mainnet-beta' && isUsingRaydium)
-                            ? 'bg-gray-700 text-gray-500 cursor-not-allowed' 
+                            ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
                             : 'bg-gradient-to-r from-blue-600 to-purple-600 text-white hover:from-blue-700 hover:to-purple-700'}`}
                 >
                     {isCreatingPool ? 'Creating...' : (canCreate ? 'Create LP' : 'Pool Active')}
@@ -485,15 +495,15 @@ function SimulatedLiquidityManager({
                 <button
                     onClick={handleAddLiquidity}
                     disabled={
-                        isAddingLiquidity || 
+                        isAddingLiquidity ||
                         !canAdd || // Can only add if a pool is active/seeded
-                        !solAmount || parseFloat(solAmount) <= 0 || 
+                        !solAmount || parseFloat(solAmount) <= 0 ||
                         !tokenAddress ||
                         (network === 'mainnet-beta' && isUsingRaydium) // Disable actual mainnet add via this UI for safety
                     }
                     className={`flex-1 py-3 px-4 rounded-lg flex items-center justify-center transition-colors duration-150 
                         ${isAddingLiquidity || !canAdd || !solAmount || parseFloat(solAmount) <= 0 || !tokenAddress || (network === 'mainnet-beta' && isUsingRaydium)
-                            ? 'bg-gray-700 text-gray-500 cursor-not-allowed' 
+                            ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
                             : 'bg-gradient-to-r from-green-600 to-teal-600 text-white hover:from-green-700 hover:to-teal-700'}`}
                 >
                     {isAddingLiquidity ? 'Adding...' : 'Add More LP'}
