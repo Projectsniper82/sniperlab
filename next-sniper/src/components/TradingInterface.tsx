@@ -222,7 +222,7 @@ function TradingInterface({
 
             // Conditional logic based on pool type will eventually go here
             // For now, we are logging to see what `selectedPool.type` is when this is called
-            if (selectedPool.type === "Standard" || selectedPool.type === "CPMM") {
+           if (selectedPool.type === "Standard" || selectedPool.type === "CPMM" || selectedPool.type === "CPMM_DEVNET_SEEDED" || selectedPool.type === "CPMM_DEVNET_CREATED") {
                 console.log("[TradingInterface DEBUG handleBuy] Routing to swapRaydiumTokens (CPMM/Standard AMM logic) for pool type:", selectedPool.type);
                 // console.log("[handleBuy] Calling swapRaydiumTokens with (original log context):", { /* your existing log object for parameters */ }); // Covered by adapter logs
                 

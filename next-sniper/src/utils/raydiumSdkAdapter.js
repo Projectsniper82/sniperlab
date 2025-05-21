@@ -356,18 +356,93 @@ export const createRaydiumPool = async (
         const txId = await signAndSendTransaction(connection, wallet, transaction);
         console.log(`[CreatePool vXX] ✅ Pool creation TX sent! TxID: ${txId}`);
 
-        const uiSolAmount = new Decimal(solLamportsBN.toString()).div(1e9);
-        const uiTokenAmount = new Decimal(tokenAmountBN.toString()).div(10 ** tokenDecimals);
-        const initialPrice = uiTokenAmount.isZero() ? new Decimal(0) : uiSolAmount.div(uiTokenAmount);
-        const poolInfoForStore = {
-            tokenAddress: tokenAddress.toLowerCase(), tokenDecimals: tokenDecimals,
-            tokenAmount: parseFloat(uiTokenAmount.toString()), solAmount: parseFloat(uiSolAmount.toString()),
-            price: initialPrice.toNumber(), volume: 0,
-            candles: [{ open: initialPrice.toNumber(), high: initialPrice.toNumber(), low: initialPrice.toNumber(), close: initialPrice.toNumber(), timestamp: startTime.toNumber() * 1000 }],
-            raydiumPoolId: derivedPoolKeys.poolId.toString(), isSeeded: false,
-        };
-        setSimulatedPool(poolInfoForStore);
-        return { signature: txId, poolInfo: poolInfoForStore };
+     console.log('[CreatePool vXX] Fetching live reserves and LP details post-creation...');
+    // Fetch live reserves again *after* pool creation to be sure
+    const newVaultASolBalanceInfo = await connection.getTokenAccountBalance(derivedPoolKeys.vaultA, 'confirmed');
+    const newVaultBTokenBalanceInfo = await connection.getTokenAccountBalance(derivedPoolKeys.vaultB, 'confirmed');
+    const liveSolReserveBN = new BN(newVaultASolBalanceInfo.value.amount);
+    const liveTokenReserveBN = new BN(newVaultBTokenBalanceInfo.value.amount);
+
+    const uiSolAmount = new Decimal(liveSolReserveBN.toString()).div(1e9);
+    const uiTokenAmount = new Decimal(liveTokenReserveBN.toString()).div(10 ** tokenDecimals);
+    const currentPrice = uiTokenAmount.isZero() ? new Decimal(0) : uiSolAmount.div(uiTokenAmount);
+    const currentTvl = uiSolAmount.plus(uiTokenAmount.mul(currentPrice));
+
+    let lpMintInfo;
+    let lpTotalSupplyBN = new BN(0);
+    let lpDecimals = derivedPoolKeys.lpDecimals !== undefined ? derivedPoolKeys.lpDecimals : 0;
+    try {
+        lpMintInfo = await getMint(connection, derivedPoolKeys.lpMint);
+        lpTotalSupplyBN = new BN(lpMintInfo.supply.toString());
+        if (lpDecimals === 0 && lpMintInfo.decimals !== 0) {
+             lpDecimals = lpMintInfo.decimals;
+        }
+        console.log(`[CreatePool vXX] LP Mint ${derivedPoolKeys.lpMint.toBase58()} Supply: ${lpTotalSupplyBN.toString()}, Decimals: ${lpDecimals}`);
+    } catch (e) {
+        console.warn(`[CreatePool vXX] Could not fetch LP mint info for ${derivedPoolKeys.lpMint.toBase58()} after creation. Error: ${e.message}`);
+    }
+
+    const poolInfoForStore = {
+        // Fields for DiscoveredPoolDetailed and SimulatedLiquidityManager's isDataComplete check
+        id: derivedPoolKeys.poolId.toString(),
+        programId: cpmmProgramId.toString(),
+        type: 'CPMM_DEVNET_CREATED', // Custom type for newly created devnet pools
+        price: currentPrice.toNumber(),
+        tvl: currentTvl.toNumber(),
+        mintA: NATIVE_MINT.toBase58(),
+        mintB: tokenAddress, // Original case tokenAddress
+        vaultA: derivedPoolKeys.vaultA.toString(),
+        vaultB: derivedPoolKeys.vaultB.toString(),
+
+        // Fields for simulatedPoolStore general compatibility
+        tokenAddress: tokenAddress.toLowerCase(), // Lowercase for matching
+        tokenDecimals: tokenDecimals,
+        tokenAmount: uiTokenAmount.toNumber(),
+        solAmount: uiSolAmount.toNumber(),
+        volume: 0,
+        candles: [{
+            open: currentPrice.toNumber(),
+            high: currentPrice.toNumber(),
+            low: currentPrice.toNumber(),
+            close: currentPrice.toNumber(),
+            timestamp: startTime.toNumber() * 1000
+        }],
+        isSeeded: true, // It's now an on-chain, "seeded" pool
+        raydiumPoolId: derivedPoolKeys.poolId.toString(), // For components that might still use this specific key
+
+        // Comprehensive rawSdkPoolInfo for SDK operations
+        rawSdkPoolInfo: {
+            id: derivedPoolKeys.poolId,
+            programId: cpmmProgramId,
+            configId: feeConfigId, // feeConfigId is defined in createRaydiumPool scope
+            observationId: derivedPoolKeys.observationId,
+            authority: derivedPoolKeys.authority,
+            mintA: { address: NATIVE_MINT, decimals: 9, programId: TOKEN_PROGRAM_ID },
+            mintB: { address: new PublicKey(tokenAddress), decimals: tokenDecimals, programId: TOKEN_PROGRAM_ID },
+            mintLp: { address: derivedPoolKeys.lpMint, decimals: lpDecimals, programId: TOKEN_PROGRAM_ID },
+            vaultA: derivedPoolKeys.vaultA,
+            vaultB: derivedPoolKeys.vaultB,
+            baseReserve: liveSolReserveBN,
+            quoteReserve: liveTokenReserveBN,
+            lpAmount: lpTotalSupplyBN,
+            status: new BN(0), // Active status
+            openTime: startTime, // BN startTime
+            configInfo: { // Ensure these fees match your devnet CPMM config
+                id: feeConfigId,
+                index: derivedPoolKeys.configIndex ?? 0, // configIndex from derivedPoolKeys or default
+                tradeFeeRate: derivedPoolKeys.tradeFeeRate ?? new BN(2500), // default 0.25%
+                protocolFeeRate: derivedPoolKeys.protocolFeeRate ?? new BN(0),
+                fundFeeRate: derivedPoolKeys.fundFeeRate ?? new BN(0),
+                createPoolFee: derivedPoolKeys.createPoolFee ?? new BN(0)
+            },
+            mintDecimalA: 9,
+            mintDecimalB: tokenDecimals,
+        },
+    };
+
+    setSimulatedPool(poolInfoForStore); // Update the global store with the comprehensive object
+    console.log('[CreatePool vXX] ✅ Successfully set comprehensive pool info in store and returning:', JSON.stringify(poolInfoForStore, replacer, 2));
+    return { signature: txId, poolInfo: poolInfoForStore };
     } catch (error) {
         console.error('[CreatePool vXX] ❌ Failed pool creation:', error);
         if (error?.logs) { console.error('[CreatePool vXX] Logs:', error.logs); }
