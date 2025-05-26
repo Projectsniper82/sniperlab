@@ -249,12 +249,7 @@ function SimulatedLiquidityManager({
             setIsCreatingPool(false); return;
         }
 
-        // --- PATCH: Allow Devnet users to always try pool creation/recovery ---
-        // (Old block removed here!)
-
         try {
-            // ...rest of your code...
-
             let rawTokenBalanceBN;
             try { rawTokenBalanceBN = new BN(tokenBalance); }
             catch (e) { setError(`Invalid tokenBalance format`); setIsCreatingPool(false); return; }
@@ -286,14 +281,28 @@ function SimulatedLiquidityManager({
             const poolDataFromOp = result?.poolInfo || result?.poolKeys;
 
             if (poolDataFromOp && result?.signature) {
-                const isDataComplete = poolDataFromOp.tokenAddress && poolDataFromOp.tokenDecimals !== undefined && poolDataFromOp.id; // Added poolDataFromOp.id
+                const isDataComplete = poolDataFromOp.tokenAddress && poolDataFromOp.tokenDecimals !== undefined && poolDataFromOp.id;
                 if (!isDataComplete) { throw new Error("Pool data from operation is incomplete."); }
 
                 setExistingPoolInfo(poolDataFromOp);
-                setSimulatedPool(poolDataFromOp);
+                setSimulatedPool(poolDataFromOp); // This updates the global store
 
                 alert(`✅ Pool operation successful! Sig: ${result.signature.substring(0, 20)}...`);
-                refreshBalances();
+                await refreshBalances(); // First immediate refresh
+
+                // START ADDED CODE: Delayed second refresh for on-chain DevNet creations
+                if (isUsingRaydium && network === 'devnet') {
+                    console.log("[SimulatedLiquidityManager] Scheduling a delayed refresh for LP details consistency after pool creation...");
+                    setTimeout(() => {
+                        console.log("[SimulatedLiquidityManager] Executing delayed refreshBalances for LP details...");
+                        if (wallet?.publicKey && poolDataFromOp.tokenAddress && tokenAddress.toLowerCase() === poolDataFromOp.tokenAddress) {
+                           refreshBalances();
+                        } else {
+                            console.warn("[SimulatedLiquidityManager] Delayed refresh skipped: Wallet or token context changed.");
+                        }
+                    }, 7000); // 7-second delay (you can adjust this timing if needed)
+                }
+                // END ADDED CODE
             } else {
                 throw new Error("Pool creation/simulation function did not return expected result (missing data or signature).");
             }

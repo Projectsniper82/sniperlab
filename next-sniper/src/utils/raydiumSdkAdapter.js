@@ -42,6 +42,7 @@ import {
     createSyncNativeInstruction,
     NATIVE_MINT,
     createCloseAccountInstruction,
+    getMint, // <<< ADD THIS IMPORT
 } from '@solana/spl-token';
 
 import BN from 'bn.js';
