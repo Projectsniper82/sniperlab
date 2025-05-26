@@ -1,4 +1,3 @@
-
 import { Connection, PublicKey } from '@solana/web3.js';
 import { getOrCreateATA } from './getOrCreateATA'; // Your util
 import BN from 'bn.js';
