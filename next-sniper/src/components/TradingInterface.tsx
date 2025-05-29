@@ -58,54 +58,147 @@ function TradingInterface({
     const [isLoading, setIsLoading] = useState<boolean>(false);
     const [errorMessage, setErrorMessage] = useState<string>('');
 
-    const updatePoolData = () => {
-        if (selectedPool && selectedPool.price) {
-            const price = typeof selectedPool.price === 'string' ? parseFloat(selectedPool.price) : selectedPool.price;
-            setCurrentPrice(price);
-            const baseReserveRaw = (selectedPool.rawSdkPoolInfo as any)?.baseReserve?.toString();
-            const quoteReserveRaw = (selectedPool.rawSdkPoolInfo as any)?.quoteReserve?.toString();
-            const solAmount = baseReserveRaw ? parseFloat(new Decimal(baseReserveRaw).div(1e9).toString()) : 1;
-            const tokenAmount = quoteReserveRaw && tokenDecimals !== undefined ? parseFloat(new Decimal(quoteReserveRaw).div(10 ** tokenDecimals).toString()) : (price > 0 ? 1 / price : 1);
-            return { price, solAmount, tokenAmount };
+    const poolDataForCalculations = useMemo(() => {
+        console.log('[MEMO_DEBUG] Recomputing poolDataForCalculations. SelectedPool ID:', selectedPool?.id, 'Price:', selectedPool?.price);
+        if (selectedPool && typeof selectedPool.price === 'number' && !isNaN(selectedPool.price)) {
+            const price = selectedPool.price;
+
+            const rawInfo = selectedPool.rawSdkPoolInfo as any;
+            // const currentTokenMintAddressFromProp = tokenAddress; // Not strictly needed here if we use mintA/B info from pool
+
+            let uiSolAmountInPool: number = 0;
+            let uiTokenAmountInPool: number = 0;
+
+            const mintA_PoolInfo = rawInfo?.mintA;
+            const mintB_PoolInfo = rawInfo?.mintB;
+
+            console.log('[MEMO_DEBUG] Pool Mint A Addr:', mintA_PoolInfo?.address, 'Pool Mint A Decimals:', mintA_PoolInfo?.decimals);
+            console.log('[MEMO_DEBUG] Pool Mint B Addr:', mintB_PoolInfo?.address, 'Pool Mint B Decimals:', mintB_PoolInfo?.decimals);
+
+            const nativeMintAddrStr = NATIVE_MINT.toBase58(); // Cache for comparison
+
+            if (typeof rawInfo?.mintAmountA === 'number' && typeof rawInfo?.mintAmountB === 'number') {
+                console.log('[MEMO_DEBUG] Detected Mainnet-like SDK structure (mintAmountA/B are UI numbers).');
+                if (mintA_PoolInfo?.address?.toString() === nativeMintAddrStr) {
+                    uiSolAmountInPool = rawInfo.mintAmountA;
+                    uiTokenAmountInPool = rawInfo.mintAmountB;
+                } else if (mintB_PoolInfo?.address?.toString() === nativeMintAddrStr) {
+                    uiSolAmountInPool = rawInfo.mintAmountB;
+                    uiTokenAmountInPool = rawInfo.mintAmountA;
+                } else {
+                    uiSolAmountInPool = rawInfo.mintAmountA;
+                    uiTokenAmountInPool = rawInfo.mintAmountB;
+                    console.warn('[MEMO_DEBUG] Mainnet-like structure, but neither mintA nor mintB is NATIVE_MINT. Assuming A=base, B=quote for UI amounts.');
+                }
+            } else if (rawInfo?.baseReserve && rawInfo?.quoteReserve) {
+                console.log('[MEMO_DEBUG] Detected Devnet/Simulated structure (baseReserve/quoteReserve are raw).');
+                const rawBaseReserveStr = String(rawInfo.baseReserve);
+                const rawQuoteReserveStr = String(rawInfo.quoteReserve);
+                const decimalsForPoolMintA = mintA_PoolInfo?.decimals;
+                const decimalsForPoolMintB = mintB_PoolInfo?.decimals;
+
+                if (typeof decimalsForPoolMintA === 'number' && typeof decimalsForPoolMintB === 'number') {
+                    const mintAAddrStr = mintA_PoolInfo?.address?.toString(); // Ensure string for comparison
+                    const mintBAddrStr = mintB_PoolInfo?.address?.toString(); // Ensure string for comparison
+
+                    if (mintAAddrStr === nativeMintAddrStr) {
+                        uiSolAmountInPool = parseFloat(new Decimal(rawBaseReserveStr).div(new Decimal(10).pow(decimalsForPoolMintA)).toString());
+                        uiTokenAmountInPool = parseFloat(new Decimal(rawQuoteReserveStr).div(new Decimal(10).pow(decimalsForPoolMintB)).toString());
+                        console.log(`[MEMO_DEBUG] Devnet path: SOL is MintA. Decimals used for SOL: ${decimalsForPoolMintA}, for Token: ${decimalsForPoolMintB}`);
+                    } else if (mintBAddrStr === nativeMintAddrStr) {
+                        uiSolAmountInPool = parseFloat(new Decimal(rawQuoteReserveStr).div(new Decimal(10).pow(decimalsForPoolMintB)).toString());
+                        uiTokenAmountInPool = parseFloat(new Decimal(rawBaseReserveStr).div(new Decimal(10).pow(decimalsForPoolMintA)).toString());
+                        console.log(`[MEMO_DEBUG] Devnet path: SOL is MintB. Decimals used for SOL: ${decimalsForPoolMintB}, for Token: ${decimalsForPoolMintA}`);
+                    } else {
+                        console.error('[MEMO_DEBUG] Devnet structure, but after converting to string, Neither mintA nor mintB is NATIVE_MINT. This is unexpected if a SOL pair. Defaulting A=base, B=quote.');
+                        uiSolAmountInPool = parseFloat(new Decimal(rawBaseReserveStr).div(new Decimal(10).pow(decimalsForPoolMintA)).toString());
+                        uiTokenAmountInPool = parseFloat(new Decimal(rawQuoteReserveStr).div(new Decimal(10).pow(decimalsForPoolMintB)).toString());
+                    }
+                } else {
+                    console.error('[MEMO_DEBUG] Devnet: Decimals for mintA or mintB are missing in rawSdkPoolInfo.');
+                }
+            } else {
+                console.warn('[MEMO_DEBUG] No recognized reserve structure found. Using price-based fallbacks or 0.');
+                uiSolAmountInPool = (price > 0) ? 1 : 0;
+                uiTokenAmountInPool = (price > 0) ? 1 / price : 0;
+                if (price <= 0) { uiSolAmountInPool = 0; uiTokenAmountInPool = 0; }
+            }
+            console.log('[MEMO_DEBUG] Final UI solAmount for pool:', uiSolAmountInPool, 'Final UI tokenAmount for pool:', uiTokenAmountInPool);
+            return { price, solAmount: uiSolAmountInPool, tokenAmount: uiTokenAmountInPool };
         }
+
+        console.log('[MEMO_DEBUG] Conditions not met for main logic or fallback to simulated pool needed.');
         const pool = getSimulatedPool();
-        if (!pool || pool.price === undefined || pool.price === null) {
-            setCurrentPrice(0);
-            return null;
+        if (!pool || typeof pool.price !== 'number' || isNaN(pool.price)) {
+            console.log('[MEMO_DEBUG] Simulated pool not found or price invalid, returning default invalid.');
+            return { price: 0, solAmount: 0, tokenAmount: 0 };
         }
-        setCurrentPrice(pool.price);
-        return pool;
-    };
+        console.log('[MEMO_DEBUG] Using simulated pool:', pool);
+        return { price: pool.price, solAmount: pool.solAmount, tokenAmount: pool.tokenAmount };
+    }, [selectedPool, tokenAddress, tokenDecimals]);
 
     useEffect(() => {
-        const poolToUse = updatePoolData();
+        if (poolDataForCalculations && typeof poolDataForCalculations.price === 'number') {
+            setCurrentPrice(poolDataForCalculations.price);
+        } else {
+            setCurrentPrice(0);
+        }
+    }, [poolDataForCalculations]);
 
-        if (!poolToUse || poolToUse.price <= 0) {
-            setExpectedBuyOutput(0); setBuyPriceImpact(0);
-            setExpectedSellOutput(0); setSellPriceImpact(0);
+    useEffect(() => {
+        console.log('[EFFECT_CALC] Running calculation useEffect. buyAmount:', buyAmount, 'sellAmount:', sellAmount, 'currentPrice:', currentPrice);
+        const poolToUse = poolDataForCalculations;
+
+        if (!poolToUse || typeof poolToUse.price !== 'number' || poolToUse.price <= 0 ||
+            typeof poolToUse.solAmount !== 'number' || poolToUse.solAmount < 0 ||
+            typeof poolToUse.tokenAmount !== 'number' || poolToUse.tokenAmount < 0 ) {
+            console.log('[EFFECT_CALC] Invalid poolToUse data or price <= 0. Setting outputs to 0 and impact to 100.');
+            setExpectedBuyOutput(0); setBuyPriceImpact(100);
+            setExpectedSellOutput(0); setSellPriceImpact(100);
             return;
         }
 
         const buyAmountFloat = parseFloat(buyAmount);
         if (!isNaN(buyAmountFloat) && buyAmountFloat > 0) {
             const inputSOL = buyAmountFloat;
-            if (poolToUse.solAmount > 0 && poolToUse.tokenAmount > 0 && poolToUse.solAmount !== 1 && poolToUse.tokenAmount !== (poolToUse.price > 0 ? 1 / poolToUse.price : 1)) {
+            console.log(`[EFFECT_CALC_BUY] Input SOL: ${inputSOL}, Pool SOL: ${poolToUse.solAmount}, Pool Token: ${poolToUse.tokenAmount}, Pool Price (likely T/S): ${poolToUse.price}`);
+
+            if (poolToUse.solAmount > 0 && poolToUse.tokenAmount > 0) {
                 const k = new Decimal(poolToUse.solAmount).mul(poolToUse.tokenAmount);
                 const newSolReserve = new Decimal(poolToUse.solAmount).plus(inputSOL);
-                const newTokenReserve = k.div(newSolReserve);
-                const estimatedOutputTokens = new Decimal(poolToUse.tokenAmount).minus(newTokenReserve).toNumber();
-
-                if (estimatedOutputTokens > 0) {
-                    const effectivePrice = new Decimal(inputSOL).div(estimatedOutputTokens);
-                    const impactRatio = effectivePrice.minus(poolToUse.price).abs().div(poolToUse.price);
-                    setExpectedBuyOutput(estimatedOutputTokens);
-                    setBuyPriceImpact(isFinite(impactRatio.toNumber()) ? impactRatio.mul(100).toNumber() : 0);
+                
+                if (newSolReserve.isZero()) {
+                     setExpectedBuyOutput(0); setBuyPriceImpact(100);
                 } else {
-                    setExpectedBuyOutput(0); setBuyPriceImpact(100);
+                    const newTokenReserve = k.div(newSolReserve);
+                    const estimatedOutputTokens = new Decimal(poolToUse.tokenAmount).minus(newTokenReserve).toNumber();
+                    console.log(`[EFFECT_CALC_BUY] k=${k.toString()}, newSolRes=${newSolReserve.toString()}, newTokenRes=${newTokenReserve.toString()}, estOutputTokens=${estimatedOutputTokens}`);
+
+                    if (estimatedOutputTokens > 0) {
+                        const marketPrice_TokenPerSol = new Decimal(poolToUse.tokenAmount).div(poolToUse.solAmount); // Assuming pool amounts are correct
+                        const executionPrice_TokenPerSol = new Decimal(estimatedOutputTokens).div(inputSOL);
+                        let impactRatio = new Decimal(0);
+                        if (marketPrice_TokenPerSol.gt(0)) {
+                           impactRatio = marketPrice_TokenPerSol.minus(executionPrice_TokenPerSol).abs().div(marketPrice_TokenPerSol);
+                        }
+                        
+                        setExpectedBuyOutput(estimatedOutputTokens);
+                        setBuyPriceImpact(isFinite(impactRatio.toNumber()) ? impactRatio.mul(100).toNumber() : 0);
+                        console.log(`[EFFECT_CALC_BUY] Market(T/S)=${marketPrice_TokenPerSol.toString()}, Exec(T/S)=${executionPrice_TokenPerSol.toString()}, Impact=${impactRatio.mul(100).toFixed(2)}%`);
+                    } else {
+                        console.log('[EFFECT_CALC_BUY] estOutputTokens <= 0. Impact 100%.');
+                        setExpectedBuyOutput(0); setBuyPriceImpact(100);
+                    }
                 }
             } else {
-                setExpectedBuyOutput(inputSOL / poolToUse.price);
-                setBuyPriceImpact(0);
+                 console.log('[EFFECT_CALC_BUY] Fallback: Zero reserves. Using direct price.');
+                 if (poolToUse.price > 0 && typeof poolToUse.price === 'number') {
+                    // Assuming selectedPool.price is Token/SOL
+                    setExpectedBuyOutput(inputSOL * poolToUse.price); 
+                 } else {
+                    setExpectedBuyOutput(0);
+                 }
+                setBuyPriceImpact(0); 
             }
         } else {
             setExpectedBuyOutput(0); setBuyPriceImpact(0);
@@ -114,58 +207,64 @@ function TradingInterface({
         const sellAmountFloat = parseFloat(sellAmount);
         if (!isNaN(sellAmountFloat) && sellAmountFloat > 0) {
             const inputTokens = sellAmountFloat;
-            if (poolToUse.solAmount > 0 && poolToUse.tokenAmount > 0 && poolToUse.solAmount !== 1 && poolToUse.tokenAmount !== (poolToUse.price > 0 ? 1 / poolToUse.price : 1)) {
+             console.log(`[EFFECT_CALC_SELL] Input Tokens: ${inputTokens}, Pool SOL: ${poolToUse.solAmount}, Pool Token: ${poolToUse.tokenAmount}, Pool Price (T/S): ${poolToUse.price}`);
+
+            if (poolToUse.solAmount > 0 && poolToUse.tokenAmount > 0) {
                 const k = new Decimal(poolToUse.solAmount).mul(poolToUse.tokenAmount);
                 const newTokenReserve = new Decimal(poolToUse.tokenAmount).plus(inputTokens);
-                const newSolReserve = k.div(newTokenReserve);
-                const estimatedOutputSOL = new Decimal(poolToUse.solAmount).minus(newSolReserve).toNumber();
-
-                if (estimatedOutputSOL > 0) {
-                    const effectivePrice = new Decimal(estimatedOutputSOL).div(inputTokens);
-                    const impactRatio = new Decimal(poolToUse.price).minus(effectivePrice).abs().div(poolToUse.price);
-                    setExpectedSellOutput(estimatedOutputSOL);
-                    setSellPriceImpact(isFinite(impactRatio.toNumber()) ? impactRatio.mul(100).toNumber() : 0);
-                } else {
+                
+                if (newTokenReserve.isZero()) {
                     setExpectedSellOutput(0); setSellPriceImpact(100);
+                } else {
+                    const newSolReserve = k.div(newTokenReserve);
+                    const estimatedOutputSOL = new Decimal(poolToUse.solAmount).minus(newSolReserve).toNumber();
+                    console.log(`[EFFECT_CALC_SELL] k=${k.toString()}, newTokenRes=${newTokenReserve.toString()}, newSolRes=${newSolReserve.toString()}, estOutputSOL=${estimatedOutputSOL}`);
+
+                    if (estimatedOutputSOL > 0) {
+                        const marketPrice_TokenPerSol = new Decimal(poolToUse.tokenAmount).div(poolToUse.solAmount);
+                        const executionPrice_TokenPerSol = new Decimal(inputTokens).div(estimatedOutputSOL);
+                        let impactRatio = new Decimal(0);
+                        if (marketPrice_TokenPerSol.gt(0)) {
+                            impactRatio = executionPrice_TokenPerSol.minus(marketPrice_TokenPerSol).abs().div(marketPrice_TokenPerSol);
+                        }
+                        setExpectedSellOutput(estimatedOutputSOL);
+                        setSellPriceImpact(isFinite(impactRatio.toNumber()) ? impactRatio.mul(100).toNumber() : 0);
+                         console.log(`[EFFECT_CALC_SELL] Market(T/S)=${marketPrice_TokenPerSol.toString()}, Exec(T/S)=${executionPrice_TokenPerSol.toString()}, Impact=${impactRatio.mul(100).toFixed(2)}%`);
+                    } else {
+                         console.log('[EFFECT_CALC_SELL] estOutputSOL <= 0. Impact 100%.');
+                        setExpectedSellOutput(0); setSellPriceImpact(100);
+                    }
                 }
             } else {
-                setExpectedSellOutput(inputTokens * poolToUse.price);
+                console.log('[EFFECT_CALC_SELL] Fallback: Zero reserves. Using direct price.');
+                if (poolToUse.price > 0 && typeof poolToUse.price === 'number') { // Assuming poolToUse.price is Token/SOL
+                    setExpectedSellOutput(inputTokens / poolToUse.price);
+                } else {
+                    setExpectedSellOutput(0);
+                }
                 setSellPriceImpact(0);
             }
         } else {
             setExpectedSellOutput(0); setSellPriceImpact(0);
         }
 
-    }, [buyAmount, sellAmount, currentPrice, selectedPool, tokenDecimals]);
-
+    }, [buyAmount, sellAmount, currentPrice, poolDataForCalculations]);
 
     useEffect(() => {
-        updatePoolData();
-        const interval = setInterval(updatePoolData, 5000);
-        return () => clearInterval(interval);
-    }, [selectedPool, tokenDecimals]);
+        if (poolDataForCalculations && typeof poolDataForCalculations.price === 'number') {
+            setCurrentPrice(poolDataForCalculations.price);
+        }
+    }, [poolDataForCalculations]);
+
 
     const handleBuy = async () => {
         console.log('------------------------------------------------------');
         console.log('[TradingInterface DEBUG handleBuy] Swap initiated by user.');
         console.log('[TradingInterface DEBUG handleBuy] Network prop:', network);
-        console.log('[TradingInterface DEBUG handleBuy] selectedPool prop received:', JSON.stringify(selectedPool, null, 2));
         if (selectedPool) {
-            console.log('[TradingInterface DEBUG handleBuy] --- Extracted from selectedPool ---');
-            console.log('[TradingInterface DEBUG handleBuy] selectedPool.id:', selectedPool.id);
-            console.log('[TradingInterface DEBUG handleBuy] selectedPool.type:', selectedPool.type);
-            console.log('[TradingInterface DEBUG handleBuy] selectedPool.programId:', selectedPool.programId);
-
-            if (selectedPool.rawSdkPoolInfo) {
-                console.log('[TradingInterface DEBUG handleBuy] selectedPool.rawSdkPoolInfo exists.');
-                console.log('[TradingInterface DEBUG handleBuy] selectedPool.rawSdkPoolInfo.config (Standard or CLMM ammConfig):', JSON.stringify(selectedPool.rawSdkPoolInfo.config, null, 2));
-                console.log('[TradingInterface DEBUG handleBuy] selectedPool.rawSdkPoolInfo.feeRate (direct from ApiPoolInfo for Standard):', selectedPool.rawSdkPoolInfo.feeRate);
-            } else {
-                console.log('[TradingInterface DEBUG handleBuy] selectedPool.rawSdkPoolInfo is MISSING.');
-            }
-            console.log('[TradingInterface DEBUG handleBuy] --- End Extracted from selectedPool ---');
+            console.log('[TradingInterface DEBUG handleBuy] selectedPool prop received: id=', selectedPool.id, 'type=', selectedPool.type);
         } else {
-            console.log('[TradingInterface DEBUG handleBuy] selectedPool prop is NULL or UNDEFINED.');
+             console.log('[TradingInterface DEBUG handleBuy] selectedPool prop is NULL or UNDEFINED.');
         }
 
         console.log("[handleBuy] Current State (original log):", { buyAmount, solBalance, tokenAddress, tokenDecimals, slippage, selectedPoolId: selectedPool?.id });
@@ -197,7 +296,7 @@ function TradingInterface({
             const solLamportsIn = new BN(new Decimal(buyAmountSOLFloat).mul(1e9).toFixed(0));
             const slippageDecimal = slippage / 100;
 
-            if (selectedPool.type === "Standard" || selectedPool.type === "CPMM" || selectedPool.type === "CPMM_DEVNET_SEEDED" || selectedPool.type === "CPMM_DEVNET_CREATED") {
+            if (["Standard", "CPMM", "CPMM_DEVNET_SEEDED", "CPMM_DEVNET_CREATED"].includes(selectedPool.type)) {
                 if (network === 'mainnet-beta') {
                     const txSignature = await mainnetBuySwap(wallet, connection, selectedPool, buyAmountSOLFloat, slippage);
                     setNotification({ show: true, message: `Buy successful! Tx: ${txSignature.substring(0, 10)}...`, type: 'success' });
@@ -259,15 +358,24 @@ function TradingInterface({
             const inputMint = tokenAddress;
             const slippageDecimal = slippage / 100;
 
-            if (network === 'mainnet-beta') {
-                const txSignature = await mainnetSellSwap(wallet, connection, selectedPool, sellAmountTokensFloat, slippage);
-                setNotification({ show: true, message: `Sell successful! Tx: ${txSignature.substring(0, 10)}...`, type: 'success' });
-                console.log("[handleSell] Mainnet Sell swap successful, Tx:", txSignature);
-            } else {
-                const txSignature = await swapRaydiumTokens(wallet, connection, poolIdToUse, inputMint, rawTokensToSell, slippageDecimal);
-                setNotification({ show: true, message: `Sell successful! Tx: ${txSignature.substring(0, 10)}...`, type: 'success' });
-                console.log("[handleSell] Raydium Sell swap successful, Tx:", txSignature);
-            }
+            if (["Standard", "CPMM", "CPMM_DEVNET_SEEDED", "CPMM_DEVNET_CREATED"].includes(selectedPool.type)) {
+                if (network === 'mainnet-beta') {
+                    const txSignature = await mainnetSellSwap(wallet, connection, selectedPool, sellAmountTokensFloat, slippage);
+                    setNotification({ show: true, message: `Sell successful! Tx: ${txSignature.substring(0, 10)}...`, type: 'success' });
+                    console.log("[handleSell] Mainnet Sell swap successful, Tx:", txSignature);
+                } else {
+                    const txSignature = await swapRaydiumTokens(wallet, connection, poolIdToUse, inputMint, rawTokensToSell, slippageDecimal);
+                    setNotification({ show: true, message: `Sell successful! Tx: ${txSignature.substring(0, 10)}...`, type: 'success' });
+                    console.log("[handleSell] Raydium Sell swap successful, Tx:", txSignature);
+                }
+            }  else if (selectedPool.type === "Concentrated") {
+                setErrorMessage(`Swap for Concentrated pools (type: ${selectedPool.type}) not yet routed to correct CLMM swap function.`);
+               throw new Error(`CLMM swap logic not implemented / misrouted for pool type ${selectedPool.type}.`);
+           } else {
+                setErrorMessage(`Unknown pool type: ${selectedPool.type}`);
+               throw new Error(`Unknown pool type: ${selectedPool.type}`);
+           }
+
 
             await refreshBalances();
             setSellAmount('');
@@ -285,11 +393,7 @@ function TradingInterface({
     };
 
     let priceToDisplay = currentPrice;
-    if (selectedPool?.price) {
-        const selectedPriceNum = typeof selectedPool.price === 'string' ? parseFloat(selectedPool.price) : selectedPool.price;
-        if (selectedPriceNum > 0) priceToDisplay = selectedPriceNum;
-    }
-    const displayPriceString = priceToDisplay > 0
+    const displayPriceString = typeof priceToDisplay === 'number' && priceToDisplay > 0
         ? priceToDisplay.toFixed(Math.max(9, -Math.floor(Math.log10(priceToDisplay)) + 4))
         : 'N/A';
 
@@ -355,7 +459,7 @@ function TradingInterface({
                     <div>
                         <label htmlFor="sell-amount-input" className="block text-gray-400 text-sm mb-1">Token Amount to Sell</label>
                         <input id="sell-amount-input" type="number" value={sellAmount} onChange={(e) => setSellAmount(e.target.value)} className="w-full p-2 rounded bg-gray-800 text-white border border-gray-700 focus:border-blue-500 focus:outline-none" placeholder="Enter token amount" step="any" min="0" />
-                        <p className="text-gray-500 text-xs mt-1">Available: {tokenBalance && tokenDecimals !== undefined ? new Decimal(tokenBalance).div(10 ** tokenDecimals).toDP(tokenDecimals).toString() : '0'}</p>
+                        <p className="text-gray-500 text-xs mt-1">Available: {tokenBalance && typeof tokenDecimals === 'number' ? new Decimal(tokenBalance).div(10 ** tokenDecimals).toDP(tokenDecimals).toString() : '0'}</p>
                     </div>
                     <div className="bg-gray-800 p-3 rounded-lg space-y-2 text-sm">
                         <div className="flex justify-between"><span className="text-gray-400">Min. SOL Received:</span><span className="text-white">{(expectedSellOutput * (1 - slippage / 100)).toFixed(6)}</span></div>
