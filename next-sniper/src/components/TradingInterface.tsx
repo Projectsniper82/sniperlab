@@ -4,6 +4,8 @@ import { Connection, PublicKey } from '@solana/web3.js';
 import BN from 'bn.js';
 import Decimal from 'decimal.js';
 import { NATIVE_MINT } from '@solana/spl-token';
+import { initRaydiumSdk } from '@/utils/initRaydiumSdk';
+await initRaydiumSdk(); // ensure it’s ready
 
 import { getSimulatedPool, updateSimulatedPoolAfterTrade } from '@/utils/simulatedPoolStore';
 import { isRaydiumPool, swapRaydiumTokens } from '@/utils/raydiumSdkAdapter';

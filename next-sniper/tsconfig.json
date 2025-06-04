@@ -9,35 +9,29 @@
       "dom.iterable",
       "esnext"
     ],
-
     /* JSX support */
     "jsx": "preserve",
-
     /* Allow importing JavaScript files */
     "allowJs": true,
     "checkJs": false,
-
     /* Next.js recommends noEmit + isolatedModules */
     "noEmit": true,
     "isolatedModules": true,
-
     /* Handy interop / strictness flags */
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
     "strict": true,
-
     /* Resolve JSON imports */
     "resolveJsonModule": true,
-
     /* Base URL & path aliases */
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"] // <--- CORRECTED/ADDED GENERAL ALIAS
+      "@/*": [
+        "src/*"
+      ] // <--- CORRECTED/ADDED GENERAL ALIAS
     },
-
     "incremental": true,
-
     "plugins": [
       {
         "name": "next"
@@ -45,15 +39,12 @@
     ]
   },
   "include": [
-    "**/*.js",
-    "**/*.jsx",
+    "next-env.d.ts",
     "**/*.ts",
     "**/*.tsx",
-    "next-env.d.ts",
     ".next/types/**/*.ts"
-, "scripts/testSwapRaydium.ts."  ],
+  ],
   "exclude": [
     "node_modules"
   ]
 }
-

@@ -7,7 +7,12 @@ import '@/utils/bufferPolyfill';
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 // Solana Web3 & SPL Token
 import { Connection, PublicKey, Transaction, VersionedTransaction } from '@solana/web3.js';
-import { NATIVE_MINT, getMint, TOKEN_PROGRAM_ID } from '@solana/spl-token';
+import {
+    NATIVE_MINT,
+    getMint,
+    TOKEN_PROGRAM_ID,
+    TOKEN_2022_PROGRAM_ID,
+} from '@solana/spl-token';
 import { getCreatePoolKeys, LiquidityPoolKeys } from '@raydium-io/raydium-sdk-v2'; // Corrected import
 import BN from 'bn.js';
 import Decimal from 'decimal.js';
@@ -464,43 +469,87 @@ export default function HomePage() {
     }, [wallet, connection, tokenAddress, tokenInfo, selectedPool, fetchTokenBalance, fetchLpTokenDetails, network, setIsLoading, setNotification]);
 
     const loadTokenInfo = useCallback(async () => {
-        // ... (Keep this function largely as is, but ensure selectedPool is reset correctly)
         if (!tokenAddress) {
-            setTokenInfo(null); setTokenBalance('0'); setErrorMessage('');
-            setLpTokenBalance('0'); setUserPairedSOL(0); setUserPairedToken(0); setTotalLpSupply('0'); setLpTokenDecimals(0);
-            setDiscoveredPools([]); setSelectedPool(null);
+            setTokenInfo(null);
+            setTokenBalance('0');
+            setErrorMessage('');
+            setLpTokenBalance('0');
+            setUserPairedSOL(0);
+            setUserPairedToken(0);
+            setTotalLpSupply('0');
+            setLpTokenDecimals(0);
+            setDiscoveredPools([]);
+            setSelectedPool(null);
             return;
         }
-        setIsLoading(true);
-        setTokenInfo(null); setTokenBalance('0'); setErrorMessage('');
-        setLpTokenBalance('0'); setUserPairedSOL(0); setUserPairedToken(0); setTotalLpSupply('0'); setLpTokenDecimals(0);
 
-        // Reset pools when loading a new token, the network-dependent useEffect will handle re-populating selectedPool
+        setIsLoading(true);
+        setTokenInfo(null);
+        setTokenBalance('0');
+        setErrorMessage('');
+        setLpTokenBalance('0');
+        setUserPairedSOL(0);
+        setUserPairedToken(0);
+        setTotalLpSupply('0');
+        setLpTokenDecimals(0);
         setDiscoveredPools([]);
         setSelectedPool(null);
 
         const notificationId = Date.now();
         let msg = `Loading token ${tokenAddress.substring(0, 6)}...`;
         setNotification({ id: notificationId, show: true, message: msg, type: 'info' });
+
         try {
             const mintPub = new PublicKey(tokenAddress);
-            const info = await connection.getParsedAccountInfo(mintPub);
-            if (!info.value?.data || !('parsed' in info.value.data)) throw new Error('Mint account not found/invalid');
-            const parsedData = info.value.data as any;
-            if (parsedData.program !== 'spl-token' || parsedData.parsed.type !== 'mint') throw new Error('Not an SPL Token mint');
-            const ti: TokenInfoState = { address: tokenAddress, decimals: Number(parsedData.parsed.info.decimals ?? 0), supply: parsedData.parsed.info.supply ?? '0', isInitialized: true };
-            setTokenInfo(ti); // This change will trigger the network-dependent pool handling useEffect
-            msg = 'Token info loaded.'; setNotification({ id: notificationId, show: true, message: msg, type: 'success' });
-            if (wallet?.publicKey) await fetchTokenBalance(wallet.publicKey instanceof PublicKey ? wallet.publicKey : new PublicKey(wallet.publicKey.toString()), mintPub);
+            let mintInfo;
+            // Try SPL-Token v1 first
+            try {
+                mintInfo = await getMint(connection, mintPub);
+            } catch (_err) {
+                // Fallback to Token-2022
+                mintInfo = await getMint(
+                    connection,
+                    mintPub,
+                    undefined,
+                    TOKEN_2022_PROGRAM_ID
+                );
+            }
+
+            const ti: TokenInfoState = {
+                address: tokenAddress,
+                decimals: mintInfo.decimals,
+                supply: mintInfo.supply.toString(),
+                isInitialized: true,
+            };
+            setTokenInfo(ti);
+
+            msg = 'Token info loaded.';
+            setNotification({ id: notificationId, show: true, message: msg, type: 'success' });
+
+            if (wallet?.publicKey) {
+                const ownerPk = wallet.publicKey instanceof PublicKey
+                    ? wallet.publicKey
+                    : new PublicKey(wallet.publicKey.toString());
+                await fetchTokenBalance(ownerPk, mintPub);
+            }
         } catch (err: any) {
-            msg = `Error loading token: ${err.message}`; setErrorMessage(msg);
+            msg = `Error loading token: ${err.message}`;
+            setErrorMessage(msg);
             setNotification({ id: notificationId, show: true, message: msg, type: 'error' });
-            setTokenInfo(null); setTokenBalance('0');
+            setTokenInfo(null);
+            setTokenBalance('0');
         } finally {
             setIsLoading(false);
-            setTimeout(() => setNotification(prev => (prev as any).id === notificationId ? { show: false, message: '', type: '' } : prev), 3000);
+            setTimeout(() => {
+                setNotification(prev =>
+                    prev.id === notificationId
+                        ? { show: false, message: '', type: '' }
+                        : prev
+                );
+            }, 3000);
         }
     }, [tokenAddress, connection, wallet, fetchTokenBalance, network, setNotification, setIsLoading, setErrorMessage]);
+
 
     const handleFetchAndDisplayPools = useCallback(async (addressToFetch: string) => {
         // *** THIS FUNCTION IS NOW MAINNET-SPECIFIC ***

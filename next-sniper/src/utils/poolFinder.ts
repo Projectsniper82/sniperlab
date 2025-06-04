@@ -56,8 +56,8 @@ export async function fetchRaydiumPoolsFromSDK(
       connection,
       cluster: clusterString,
       owner,
-      disableLoadToken: true,
-      disableFeatureCheck: true,
+      disableLoadToken: false,
+      disableFeatureCheck: false,
     });
   } catch (sdkLoadError: any) {
     console.error(`[poolFinder] Failed to load Raydium SDK:`, sdkLoadError);

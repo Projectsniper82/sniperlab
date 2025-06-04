@@ -1,4 +1,7 @@
-export async function mainnetSellSwap(wallet: any, connection: any, selectedPool: any, sellAmountTokensFloat: number, slippage: number) {
-    // Just returns a fake string for now, for testing routing
-    return 'fake-mainnet-sell-tx-signature';
+// Placeholder sell swap utility for development
+
+export async function mainnetSellSwap() {
+  // This is a dummy placeholder. Replace with real implementation when ready.
+  console.log('[mainnetSellSwap] Placeholder called.');
+  return 'DUMMY_TX_SIGNATURE';
 }
