@@ -28,7 +28,7 @@ import {
     DEVNET_CREATE_POOL_PROGRAM_ID // This is the Devnet CPMM Program ID "CPMDWB..."
 } from '@/utils/raydiumConsts';
 import { mintTokenWithPhantomWallet } from '@/utils/mintWithPhantom';
-import { initRaydiumSdk } from '@/utils/raydiumSdkAdapter';
+import { initRaydiumSdkForUser } from '@/utils/initRaydiumSdk'; 
 import {
     checkRaydiumDependencies,
     getInstallationInstructions
@@ -412,7 +412,7 @@ export default function HomePage() {
             const pkInstance = currentPublicKey instanceof PublicKey ? currentPublicKey : new PublicKey(currentPublicKey.toString());
             const bal = await connection.getBalance(pkInstance);
             setSolBalance(bal / 1e9);
-            await initRaydiumSdk(conformingWallet, connection, network);
+            await initRaydiumSdkForUser(conformingWallet, connection, network);
             if (tokenAddress) {
                 await fetchTokenBalance(pkInstance, new PublicKey(tokenAddress));
             }
