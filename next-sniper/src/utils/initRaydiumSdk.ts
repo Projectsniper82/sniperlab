@@ -2,34 +2,26 @@
 import { Raydium } from '@raydium-io/raydium-sdk-v2';
 import { Connection, PublicKey } from '@solana/web3.js';
 
-// YOU MUST NOT use a static owner if you want security. For now this is fine for mainnet bot.
-const RPC = 'https://api.mainnet-beta.solana.com';
-const OWNER = new PublicKey('11111111111111111111111111111111'); // or any valid pubkey
+// This function now takes the user-specific connection and their public key as owner.
+export async function initRaydiumSdkForUser(
+    userConnection: Connection,
+    ownerPublicKey: PublicKey
+): Promise<Raydium> {
+    console.log(`[initRaydiumSdkForUser] Initializing Raydium SDK with user-specific connection and owner: ${ownerPublicKey.toBase58()}`);
+    console.log(`[initRaydiumSdkForUser] RPC Endpoint being used: ${userConnection.rpcEndpoint}`);
 
-export async function initRaydiumSdk() {
-  // Prevent duplicate inits, work in both SSR and client
-  if (typeof window !== "undefined") {
-    if ((window as any).raydiumSdkInstance) return (window as any).raydiumSdkInstance;
-  } else {
-    if ((globalThis as any).raydiumSdkInstance) return (globalThis as any).raydiumSdkInstance;
-  }
+    // The 'owner' here provides context to the SDK, especially for ATA derivation if the SDK handles it,
+    // and for setting the default fee payer on transactions it constructs.
+    // The actual signing of the transaction will still be done by the user's wallet adapter.
+    const sdk = await Raydium.load({
+        connection: userConnection,
+        owner: ownerPublicKey, // Use the connected user's public key as the owner context
+        cluster: 'mainnet',    // Assuming mainnet, adjust if network can vary
+        disableLoadToken: false, // Defaults, adjust if needed
+        disableFeatureCheck: false, // Defaults, adjust if needed
+    });
 
-  const connection = new Connection(RPC);
-  const sdk = await Raydium.load({
-    connection,
-    cluster: 'mainnet',
-    owner: OWNER,
-    disableLoadToken: false,
-    disableFeatureCheck: false,
-  });
-
-  // Save instance globally for re-use
-  if (typeof window !== "undefined") {
-    (window as any).raydiumSdkInstance = sdk;
-  } else {
-    (globalThis as any).raydiumSdkInstance = sdk;
-  }
-
-  return sdk;
+    console.log("[initRaydiumSdkForUser] Raydium SDK instance created for user.");
+    return sdk;
 }
 

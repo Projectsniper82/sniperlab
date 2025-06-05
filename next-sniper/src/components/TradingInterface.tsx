@@ -1,19 +1,25 @@
 // src/components/TradingInterface.tsx
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Connection, PublicKey } from '@solana/web3.js';
 import BN from 'bn.js';
 import Decimal from 'decimal.js';
 import { NATIVE_MINT } from '@solana/spl-token';
-import { initRaydiumSdk } from '@/utils/initRaydiumSdk';
-await initRaydiumSdk(); // ensure it’s ready
+// REMOVE or COMMENT OUT this old import and call:
+// import { initRaydiumSdk } from '@/utils/initRaydiumSdk';
+// await initRaydiumSdk(); // ensure it’s ready  <--- REMOVE THIS LINE
+
+// You will use initRaydiumSdkForUser inside mainnetBuyUtil.ts as we set it up.
+// TradingInterface itself doesn't need to call initRaydiumSdkForUser directly
+// if mainnetBuyUtil.ts handles SDK initialization internally with the passed connection and wallet.
 
 import { getSimulatedPool, updateSimulatedPoolAfterTrade } from '@/utils/simulatedPoolStore';
-import { isRaydiumPool, swapRaydiumTokens } from '@/utils/raydiumSdkAdapter';
+import { isRaydiumPool, swapRaydiumTokens } from '@/utils/raydiumSdkAdapter'; // Ensure this adapter is correctly set up
 import { DiscoveredPoolDetailed } from '@/utils/poolFinder';
-import { NetworkType } from '@/context/NetworkContext';
+import { NetworkType, useNetwork } from '@/context/NetworkContext'; // Assuming useNetwork is correctly imported
 
 import { mainnetBuySwap } from '@/utils/mainnetBuyUtil';
 import { mainnetSellSwap } from '@/utils/mainnetSellSwap';
+// ... rest of your TradingInterfaceProps and component
 
 type NotificationType = 'success' | 'error' | 'info' | '';
 
