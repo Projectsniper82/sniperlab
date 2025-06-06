@@ -1,5 +1,5 @@
-// findDecoder.js (Complete, Corrected Version with Encrypted Key, Correct RPC, and Fixed Logging)
-const fs = require('fs'); // May still be used by SDK dependencies
+// findDecoder.js (Modified to test specific dApp pool and parameters)
+const fs = require('fs');
 const { Connection, Keypair, PublicKey, VersionedTransaction } = require('@solana/web3.js');
 const { Raydium, TxVersion } = require('@raydium-io/raydium-sdk-v2');
 const BN = require('bn.js');
@@ -11,28 +11,22 @@ const path = require('path');
 try {
     require('dotenv').config({ path: path.resolve(process.cwd(), '.env.local') });
 } catch (e) {
-    console.warn("Warning: 'dotenv' package might be missing or .env.local not found. This is okay if .env.local doesn't exist yet for some reason, but script relies on it for secrets.", e.message);
+    console.warn("Warning: 'dotenv' package might be missing or .env.local not found.", e.message);
 }
 
 // --- Configuration ---
-// Correctly get the full RPC URL from the environment variable
 const RPC_URL_FROM_ENV = process.env.NEXT_PUBLIC_MAINNET_RPC_URL;
-// console.log(`DEBUG: Value of NEXT_PUBLIC_MAINNET_RPC_URL read from process.env: "${RPC_URL_FROM_ENV}"`); // Optional debug
-
-// If RPC_URL_FROM_ENV has a value (i.e., your Helius URL from .env.local), use it directly.
-// Otherwise, use the public fallback.
 const RPC_URL = RPC_URL_FROM_ENV || 'https://api.mainnet-beta.solana.com';
-// This log will now confirm which RPC URL is actually being used
 console.log(`--- Initializing with RPC URL: ${RPC_URL} ---`);
 
 
-// --- POOL DETAILS (from your version) ---
-const TARGET_POOL_ID_STR = '9CTxEyRStwTKLfVTS6c7rfQc7PTxY42YPdQcrHTv53Ao';
-const INPUT_MINT_PK = new PublicKey('So11111111111111111111111111111111111111112'); // WSOL
-const OUTPUT_MINT_PK = new PublicKey('h5NciPdMZ5QCB5BYETJMYBMpVx9ZuitR6HcVjyBhood');
+// --- POOL DETAILS (Matching dApp's problematic swap) ---
+const TARGET_POOL_ID_STR = 'DHgzwASfrYxDcAAedBWAdvHxj9AUbtvhoz14VPNFYosF'; // dApp's pool
+const INPUT_MINT_PK = new PublicKey('So11111111111111111111111111111111111111112'); // WSOL (Input is SOL)
+const OUTPUT_MINT_PK = new PublicKey('G7ua8G7uSk6baT4GGNYJ1XLxKq2jP4s5TebqQAZpyqGm'); // dApp's output token
 
-const SWAP_AMOUNT_IN_LAMPORTS_BN = new BN(10000000); // 0.01 SOL
-const SLIPPAGE_PERCENTAGE = 0.05; // 5% slippage
+const SWAP_AMOUNT_IN_LAMPORTS_BN = new BN(2000000); // 0.002 SOL (Matching dApp input)
+const SLIPPAGE_PERCENTAGE = 0.035; // 3.5% slippage (Matching dApp's slippage)
 
 async function loadAndDecryptKeypair() {
     console.log("Attempting to load keypair from encrypted .env.local...");
@@ -42,8 +36,8 @@ async function loadAndDecryptKeypair() {
     const authTagHex = process.env.KEY_AUTHTAG_HEX;
 
     if (!encryptedKeyHex || !saltHex || !ivHex || !authTagHex) {
-        console.error('Error: Encrypted key environment variables (ENCRYPTED_PRIVATE_KEY_HEX, KEY_SALT_HEX, KEY_IV_HEX, KEY_AUTHTAG_HEX) not found in .env.local');
-        console.log("Please run encrypt-key.js first to set up your .env.local file with these values.");
+        console.error('Error: Encrypted key environment variables not found in .env.local');
+        console.log("Please run encrypt-key.js first.");
         process.exit(1);
     }
 
@@ -64,7 +58,6 @@ async function loadAndDecryptKeypair() {
         const authTag = Buffer.from(authTagHex, 'hex');
 
         const derivedKey = crypto.pbkdf2Sync(password, salt, 200000, 32, 'sha512');
-
         const decipher = crypto.createDecipheriv('aes-256-gcm', derivedKey, iv);
         decipher.setAuthTag(authTag);
 
@@ -92,6 +85,7 @@ async function main() {
     console.log("\n--- 1. Initializing Connection & Raydium SDK ---");
     const connection = new Connection(RPC_URL, 'confirmed');
 
+    // Initialize Raydium SDK with the ownerKeypair for signing
     const raydium = await Raydium.load({ connection, owner: ownerKeypair, blockhashCommitment: 'confirmed' });
     console.log("Raydium SDK Loaded.");
     if (!raydium.liquidity || !raydium.liquidity.getPoolInfoFromRpc) {
@@ -105,23 +99,28 @@ async function main() {
     console.log(`Target Pool ID: ${poolId.toBase58()}`);
     console.log(`Input Mint (WSOL): ${INPUT_MINT_PK.toBase58()}`);
     console.log(`Output Mint: ${OUTPUT_MINT_PK.toBase58()}`);
+    console.log(`Input Amount (Lamports): ${SWAP_AMOUNT_IN_LAMPORTS_BN.toString()}`);
+    console.log(`Slippage: ${SLIPPAGE_PERCENTAGE * 100}%`);
+
 
     // 3. Fetch Parsed Pool Data using Raydium SDK
     console.log("\n--- 3. Fetching Parsed Pool Data via SDK ---");
     let sdkFetchedPoolData;
     try {
+        // Using poolId.toBase58() as getPoolInfoFromRpc expects a string ID
         sdkFetchedPoolData = await raydium.liquidity.getPoolInfoFromRpc({ poolId: poolId.toBase58() });
         console.log("Successfully fetched and parsed pool data via SDK.");
 
         const poolInfoForSDK_intermediate = sdkFetchedPoolData.poolInfo;
         const ammPoolKeysFromSDK_intermediate = sdkFetchedPoolData.poolKeys;
 
-        console.log("\n--- DEBUG: poolInfoForSDK Structure (for TypeScript MySdkPoolInfo interface) ---");
+        // Log the raw structures to compare with dApp's MySdkPoolInfo and MyAmmV4Keys
+        console.log("\n--- DEBUG: poolInfo Structure from SDK (fed into poolInfoForSDK) ---");
         console.log(JSON.stringify(poolInfoForSDK_intermediate, (key, value) => {
-            if (value && value._bn !== undefined) { return value.toString(); }
-            if (value && value._isPublicKey) { return value.toBase58(); }
-            if (value && value.constructor && value.constructor.name === 'PublicKey') { return value.toBase58(); }
-            if (value && Buffer.isBuffer(value)) { return value.toString('hex'); }
+            if (value && value._bn !== undefined) { return value.toString(); } // BN.js
+            if (value && value.constructor && value.constructor.name === 'PublicKey') { return value.toBase58(); } // PublicKey
+            if (value && Buffer.isBuffer(value)) { return value.toString('hex'); } // Buffer
+            // Handle nested fees object if BNs are present
             if (key === "fees" && typeof value === "object" && value !== null) {
                 const feesFormatted = {};
                 for (const feeKey in value) {
@@ -136,17 +135,17 @@ async function main() {
             return value;
         }, 2));
 
-        console.log("\n--- DEBUG: ammPoolKeysFromSDK Structure (for TypeScript MyAmmV4Keys interface) ---");
+        console.log("\n--- DEBUG: poolKeys Structure from SDK (fed into ammPoolKeysFromSDK) ---");
         console.log(JSON.stringify(ammPoolKeysFromSDK_intermediate, (key, value) => {
-            if (value && value._isPublicKey) { return value.toBase58(); }
             if (value && value.constructor && value.constructor.name === 'PublicKey') { return value.toBase58(); }
-            // For nested objects like mintA, mintB, mintLp within ammPoolKeysFromSDK,
-            // which might contain PublicKey instances for their 'address' property:
-            if (typeof value === 'object' && value !== null) {
+            // Handle nested PublicKey instances within objects like mintA, mintB, etc.
+            if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
                 const cleanedValue = { ...value };
                 for (const prop in cleanedValue) {
                     if (cleanedValue[prop] && cleanedValue[prop].constructor && cleanedValue[prop].constructor.name === 'PublicKey') {
                         cleanedValue[prop] = cleanedValue[prop].toBase58();
+                    } else if (cleanedValue[prop] && cleanedValue[prop]._bn !== undefined) { // Handle BN in nested objects
+                        cleanedValue[prop] = cleanedValue[prop].toString();
                     }
                 }
                 return cleanedValue;
@@ -154,45 +153,48 @@ async function main() {
             return value;
         }, 2));
 
+
         if (!sdkFetchedPoolData || !sdkFetchedPoolData.poolInfo || !sdkFetchedPoolData.poolKeys) {
-            console.error("SDK's getPoolInfoFromRpc did not return the expected structure (poolInfo or poolKeys missing).");
+            console.error("SDK's getPoolInfoFromRpc did not return the expected structure.");
             return;
         }
         console.log(`\n  SDK poolInfo.mintA (Address: ${new PublicKey(sdkFetchedPoolData.poolInfo.mintA.address).toBase58()}, Decimals: ${sdkFetchedPoolData.poolInfo.mintA.decimals})`);
         console.log(`  SDK poolInfo.mintB (Address: ${new PublicKey(sdkFetchedPoolData.poolInfo.mintB.address).toBase58()}, Decimals: ${sdkFetchedPoolData.poolInfo.mintB.decimals})`);
-        console.log(`  SDK poolInfo.baseReserve (corresponds to mintA): ${new BN(sdkFetchedPoolData.poolInfo.baseReserve).toString()}`);
-        console.log(`  SDK poolInfo.quoteReserve (corresponds to mintB): ${new BN(sdkFetchedPoolData.poolInfo.quoteReserve).toString()}`);
 
     } catch (e) {
         console.error("Error during SDK pool data fetching/parsing:", e);
-        console.error(e.stack);
         return;
     }
 
+    // These are the objects directly from the SDK, after ensuring fields are correct types if necessary (SDK usually handles this)
     const poolInfoForSDK = sdkFetchedPoolData.poolInfo;
     const ammPoolKeysFromSDK = sdkFetchedPoolData.poolKeys;
 
+
     console.log("\n--- 4. Verifying Mint Alignment with SDK Data ---");
+    // Ensure PublicKeys are used for comparison
     const sdkMintA = new PublicKey(poolInfoForSDK.mintA.address);
     const sdkMintB = new PublicKey(poolInfoForSDK.mintB.address);
 
     if (!((sdkMintA.equals(INPUT_MINT_PK) && sdkMintB.equals(OUTPUT_MINT_PK)) ||
           (sdkMintB.equals(INPUT_MINT_PK) && sdkMintA.equals(OUTPUT_MINT_PK)))) {
-        console.error("CRITICAL: Script's INPUT_MINT/OUTPUT_MINT do not match the SDK-parsed poolInfo.mintA/mintB for the new pool.");
+        console.error("CRITICAL: Script's INPUT_MINT/OUTPUT_MINT do not match the SDK-parsed poolInfo.mintA/mintB.");
         return;
     }
-    console.log("Mint alignment verified with SDK's poolInfo for the new pool.");
+    console.log("Mint alignment verified with SDK's poolInfo.");
+
 
     // 5. Compute Swap Amount Out
     console.log("\n--- 5. Computing Swap Amount Out (using SDK data) ---");
     let amountOutResult;
     try {
         console.log(`Calculating with SLIPPAGE_PERCENTAGE: ${SLIPPAGE_PERCENTAGE * 100}%`);
+        // Ensure all mints are PublicKey objects for computeAmountOut
         amountOutResult = raydium.liquidity.computeAmountOut({
-            poolInfo: poolInfoForSDK,
+            poolInfo: poolInfoForSDK, // Directly from SDK
             amountIn: SWAP_AMOUNT_IN_LAMPORTS_BN,
-            mintIn: INPUT_MINT_PK,
-            mintOut: OUTPUT_MINT_PK,
+            mintIn: INPUT_MINT_PK,     // PublicKey object
+            mintOut: OUTPUT_MINT_PK,    // PublicKey object
             slippage: SLIPPAGE_PERCENTAGE,
         });
         console.log("Swap Amount Out Computed:");
@@ -200,7 +202,6 @@ async function main() {
         console.log(`  Minimum Amount Out (lamports after ${SLIPPAGE_PERCENTAGE * 100}% slippage): ${amountOutResult.minAmountOut.toString()}`);
     } catch (e) {
         console.error("Error computing amount out:", e);
-        console.error(e.stack);
         return;
     }
 
@@ -208,11 +209,13 @@ async function main() {
     console.log("\n--- 6. Constructing and Simulating Swap Transaction ---");
     let swapPayload;
     try {
-        swapPayload = await raydium.liquidity.swap({
+        // Use PublicKey objects for inputMint and outputMint as per SDK's JS examples
+        const swapParams = {
             poolInfo: poolInfoForSDK,
-            poolKeys: ammPoolKeysFromSDK,
+            poolKeys: ammPoolKeysFromSDK, // Directly from SDK
             owner: ownerKeypair.publicKey,
-            inputMint: INPUT_MINT_PK,
+            inputMint: INPUT_MINT_PK,     // PublicKey object
+            outputMint: OUTPUT_MINT_PK,   // PublicKey object
             amountIn: SWAP_AMOUNT_IN_LAMPORTS_BN,
             amountOut: amountOutResult.minAmountOut,
             fixedSide: 'in',
@@ -220,53 +223,68 @@ async function main() {
             computeBudgetConfig: { units: 400000, microLamports: 25000 },
             config: {
                 associatedOnly: true,
-                inputUseSolBalance: (INPUT_MINT_PK.toBase58() === 'So11111111111111111111111111111111111111112'),
-                outputUseSolBalance: (OUTPUT_MINT_PK.toBase58() === 'So11111111111111111111111111111111111111112'),
+                // For SOL input, inputUseSolBalance should be true.
+                inputUseSolBalance: INPUT_MINT_PK.equals(new PublicKey('So11111111111111111111111111111111111111112')),
+                // If output is SOL, outputUseSolBalance should be true (for unwrapping).
+                outputUseSolBalance: OUTPUT_MINT_PK.equals(new PublicKey('So11111111111111111111111111111111111111112')),
             }
-        });
+        };
+        console.log("\n--- DEBUG: Parameters being passed to raydium.liquidity.swap ---");
+        console.log(JSON.stringify(swapParams, (key, value) => {
+            if (value && value._bn !== undefined) { return value.toString(); }
+            if (value && value.constructor && value.constructor.name === 'PublicKey') { return value.toBase58(); }
+             // Handle nested fees object if BNs are present
+            if (key === "fees" && typeof value === "object" && value !== null) {
+                const feesFormatted = {};
+                for (const feeKey in value) {
+                    if (value[feeKey] && value[feeKey]._bn !== undefined) {
+                        feesFormatted[feeKey] = value[feeKey].toString();
+                    } else {
+                        feesFormatted[feeKey] = value[feeKey];
+                    }
+                }
+                return feesFormatted;
+            }
+            // Handle nested PublicKey instances within poolInfo's mintA, mintB, etc.
+            if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+                const cleanedValue = { ...value };
+                 let hasChanged = false;
+                for (const prop in cleanedValue) {
+                    if (cleanedValue[prop] && cleanedValue[prop].constructor && cleanedValue[prop].constructor.name === 'PublicKey') {
+                        cleanedValue[prop] = cleanedValue[prop].toBase58();
+                        hasChanged = true;
+                    } else if (cleanedValue[prop] && cleanedValue[prop]._bn !== undefined) { // Handle BN in nested objects
+                        cleanedValue[prop] = cleanedValue[prop].toString();
+                        hasChanged = true;
+                    }
+                }
+                // Return cleanedValue only if it's not the top-level poolInfo or poolKeys, to avoid overly verbose logging of those.
+                // This replacer is primarily for the 'swapParams' object itself.
+                if (key === 'poolInfo' || key === 'poolKeys') return "[Object Contents Logged Separately Above]";
+                return cleanedValue;
+            }
+            return value;
+        }, 2));
+
+
+        swapPayload = await raydium.liquidity.swap(swapParams);
         console.log("Swap payload constructed by SDK.");
+        
+        console.log("\n--- DEBUG: swapPayload Key Properties ---");
+        // ... (existing swapPayload logging)
 
-        // --- MODIFIED DEBUG LOGGING FOR swapPayload ---
-        console.log("\n--- DEBUG: swapPayload Key Properties (for TypeScript MyLiquiditySwapPayload interface) ---");
-        if (swapPayload) {
-            if (swapPayload.transaction) {
-                console.log("  swapPayload.transaction: [Exists - VersionedTransaction Object]");
-                console.log("    transaction.message.feePayer:", swapPayload.transaction.message.payerKey?.toBase58());
-                console.log("    transaction.message.recentBlockhash:", swapPayload.transaction.message.recentBlockhash);
-            } else {
-                console.log("  swapPayload.transaction: [Not Found]");
-            }
-            if (swapPayload.signers && Array.isArray(swapPayload.signers)) {
-                console.log("  swapPayload.signers: [Exists]");
-                console.log("    Number of signers expected from SDK:", swapPayload.signers.length);
-            } else {
-                console.log("  swapPayload.signers: [Not Found or Not an Array]");
-            }
-        } else {
-            console.log("  swapPayload: [Not Found or Undefined]");
-        }
-        // --- END MODIFIED DEBUG LOGGING ---
-
-        if (swapPayload && swapPayload.transaction) { // Added null check for swapPayload
-            console.log("Transaction object found in swapPayload.");
+        if (swapPayload && swapPayload.transaction) {
             const transaction = swapPayload.transaction;
-
             if (!transaction.message.recentBlockhash) {
-                console.log("Fetching and setting recent blockhash for the transaction...");
                 const { blockhash } = await connection.getLatestBlockhashAndContext('confirmed');
                 transaction.message.recentBlockhash = blockhash;
-                console.log(`Recent Blockhash set: ${transaction.message.recentBlockhash}`);
-            } else {
-                console.log(`Transaction already has a recentBlockhash: ${transaction.message.recentBlockhash}`);
             }
-            
-            console.log("Signing transaction with ownerKeypair (decrypted key)...");
             transaction.sign([ownerKeypair]);
 
             console.log("Simulating the transaction...");
             const simResult = await connection.simulateTransaction(transaction, {
                 replaceRecentBlockhash: true, 
-                sigVerify: false,
+                sigVerify: false, // Already signed
                 commitment: "confirmed",
             });
 
@@ -280,20 +298,17 @@ async function main() {
                 (simResult.value.logs || []).forEach(log => console.log(`  ${log}`));
                 console.log(`Consumed CUs: ${simResult.value.unitsConsumed}`);
             }
-
         } else {
-            console.error("Swap payload did not contain a direct 'transaction' object or swapPayload itself is undefined.");
+            console.error("Swap payload did not contain a transaction object.");
         }
     } catch (e) {
         console.error("Error during swap transaction construction or simulation:", e);
-        console.error(e.stack);
     }
     console.log("\n--- Script Finished ---");
 }
 
 main().catch(e => {
     console.error("Fatal error in main execution:", e);
-    console.error(e.stack);
 });
 
 

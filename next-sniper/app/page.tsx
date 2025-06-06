@@ -412,7 +412,12 @@ export default function HomePage() {
             const pkInstance = currentPublicKey instanceof PublicKey ? currentPublicKey : new PublicKey(currentPublicKey.toString());
             const bal = await connection.getBalance(pkInstance);
             setSolBalance(bal / 1e9);
-            await initRaydiumSdkForUser(conformingWallet, connection, network);
+            
+            const ownerPkInstance = conformingWallet.publicKey instanceof PublicKey
+                ? conformingWallet.publicKey
+                : new PublicKey(conformingWallet.publicKey.toString());
+
+            await initRaydiumSdkForUser(connection, ownerPkInstance);
             if (tokenAddress) {
                 await fetchTokenBalance(pkInstance, new PublicKey(tokenAddress));
             }

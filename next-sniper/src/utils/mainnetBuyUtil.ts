@@ -4,34 +4,34 @@ import {
     PublicKey,
     VersionedTransaction,
 } from '@solana/web3.js';
-import {
-    NATIVE_MINT,
-} from '@solana/spl-token';
+import { NATIVE_MINT } from '@solana/spl-token';
 import BN from 'bn.js';
 import Decimal from 'decimal.js';
 
 import { DiscoveredPoolDetailed } from './poolFinder';
 import {
     createAmmV4SwapTransactionPayload,
-    MySdkPoolInfo,
-    MyAmmV4Keys,
+    MySdkPoolInfo, // Still needed for ammSwapCalculator
+    MyAmmV4Keys,   // Still needed for ammSwapCalculator
     MyLiquiditySwapPayload,
     MyTokenInfoFromSDK
-} from './SwapHelpers';
+} from './SwapHelpers'; // CreateAmmV4SwapPayloadParams now expects raw SDK pool data
 import {
     getStandardPoolUiData,
     calculateStandardAmmSwapQuote,
     UiPoolReserves,
     SwapTransactionQuote
 } from './ammSwapCalculator';
-// Import the new SDK initialization function
-import { initRaydiumSdkForUser } from './initRaydiumSdk'; // Changed import
+import { initRaydiumSdkForUser } from './initRaydiumSdk';
+
 import type { Raydium } from '@raydium-io/raydium-sdk-v2';
 
 const toPublicKey = (key: string | PublicKey): PublicKey => typeof key === 'string' ? new PublicKey(key) : key;
 
+// transformTokenInfo and your custom MySdkPoolInfo/MyAmmV4Keys transformations are kept
+// because your ammSwapCalculator and possibly UI logic depend on them.
+// However, for the actual swap, we will pass the raw SDK objects to SwapHelpers.
 const transformTokenInfo = (rawTokenInfo: any, fieldNameForError: string): MyTokenInfoFromSDK => {
-    // ... (transformTokenInfo function remains the same as previously provided)
     const addressStr = rawTokenInfo?.address?.toString();
     const programIdStr = rawTokenInfo?.programId?.toString();
     const decimalsNum = rawTokenInfo?.decimals;
@@ -54,176 +54,137 @@ const transformTokenInfo = (rawTokenInfo: any, fieldNameForError: string): MyTok
 };
 
 export async function mainnetBuySwap(
-    wallet: any, // Your wallet object with publicKey and signTransaction method
-    connection: Connection, // This connection from NetworkContext (SHOULD BE HELIUS)
+    wallet: any,
+    connection: Connection,
     selectedPoolFromFinder: DiscoveredPoolDetailed,
     buyAmountSOLFloat: number,
     slippagePercent: number
 ): Promise<string> {
-    console.log('[mainnetBuySwap Refactored] --- Orchestrating AMM V4 Buy Swap ---');
+    console.log('[mainnetBuySwap Refactored] --- Orchestrating AMM V4 Buy Swap (Using FindDecoder Approach) ---');
 
-    const payer: PublicKey = toPublicKey(wallet.publicKey); // This is the user's PublicKey
+    const payer: PublicKey = toPublicKey(wallet.publicKey);
     const amountInLamports = new BN(new Decimal(buyAmountSOLFloat).mul(1e9).toFixed(0));
-    const inputMintPk = NATIVE_MINT;
+    const inputMintPk = NATIVE_MINT; // This is PublicKey NATIVE_MINT
 
-    console.log(`[mainnetBuySwap Refactored] Payer: ${payer.toBase58()}`);
-    console.log(`[mainnetBuySwap Refactored] Target Pool ID: ${selectedPoolFromFinder.id}`);
+    // ... (initial console logs) ...
 
-    if (selectedPoolFromFinder.programId !== "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8") {
-        throw new Error(`This utility is for AMM V4 pools. Program ID mismatch: ${selectedPoolFromFinder.programId}`);
-    }
+    console.log(`[mainnetBuySwap] Initializing SDK...`);
+    const sdk: Raydium = await initRaydiumSdkForUser(connection, payer);
 
-    // 1. Initialize SDK with the user's connection and public key as owner
-    console.log(`[mainnetBuySwap] Initializing SDK with connection from NetworkContext (RPC: ${connection.rpcEndpoint}) and payer: ${payer.toBase58()}`);
-    const sdk: Raydium = await initRaydiumSdkForUser(connection, payer); // Pass user's connection and PK
-
-    if (!sdk || !sdk.liquidity || !sdk.liquidity.getPoolInfoFromRpc) {
-        throw new Error('Raydium SDK instance or getPoolInfoFromRpc not available!');
-    }
-
-    // 2. Fetch Live Pool Data (uses the connection the SDK was initialized with)
     console.log(`[mainnetBuySwap Refactored] Fetching live pool data for ID: ${selectedPoolFromFinder.id}`);
-    let sdkFetchedPoolDataRaw: any;
+    let sdkFetchedPoolDataRaw: any; // This will hold the raw SDK response
     try {
         sdkFetchedPoolDataRaw = await sdk.liquidity.getPoolInfoFromRpc({ poolId: selectedPoolFromFinder.id });
         if (!sdkFetchedPoolDataRaw || !sdkFetchedPoolDataRaw.poolInfo || !sdkFetchedPoolDataRaw.poolKeys) {
             throw new Error("SDK's getPoolInfoFromRpc failed to return poolInfo and poolKeys.");
         }
+        // Log the raw data from SDK - this is what findDecoder.js uses.
+        console.log("[mainnetBuySwap DEBUG] Raw poolInfo direct from SDK:", JSON.stringify(sdkFetchedPoolDataRaw.poolInfo, null, 2));
+        console.log("[mainnetBuySwap DEBUG] Raw poolKeys direct from SDK:", JSON.stringify(sdkFetchedPoolDataRaw.poolKeys, null, 2));
+
     } catch (e: any) {
-        console.error(`Error fetching pool info from RPC for pool ${selectedPoolFromFinder.id}: ${e.message || 'Unknown RPC error'}`, e);
+        // ... (error handling) ...
         throw e;
     }
 
-    const rawPoolInfoFromSDK = sdkFetchedPoolDataRaw.poolInfo;
-    const rawPoolKeysFromSDK = sdkFetchedPoolDataRaw.poolKeys;
-
-    // --- Transform raw SDK data (same as before) ---
-    const lpMintFromInfo = transformTokenInfo(rawPoolInfoFromSDK.lpMint, 'poolInfo.lpMint');
-    const lpAmountNumber = parseFloat(rawPoolInfoFromSDK.lpAmount);
-    if (isNaN(lpAmountNumber) || typeof rawPoolInfoFromSDK.lpMint?.decimals !== 'number') {
-        throw new Error('lpAmount or lpMint.decimals from rawPoolInfo is invalid or missing for lpSupply calculation.');
-    }
-
-    const processedLivePoolInfo: MySdkPoolInfo = {
-        id: new PublicKey(rawPoolInfoFromSDK.id),
-        version: parseInt(rawPoolInfoFromSDK.version, 10),
-        status: new BN(rawPoolInfoFromSDK.status.toString()),
-        programId: new PublicKey(rawPoolInfoFromSDK.programId),
-        mintA: transformTokenInfo(rawPoolInfoFromSDK.mintA, 'poolInfo.mintA'),
-        mintB: transformTokenInfo(rawPoolInfoFromSDK.mintB, 'poolInfo.mintB'),
+    // For ammSwapCalculator, we still use your transformed MySdkPoolInfo
+    // This part assumes your transformation logic is correct for the calculator's needs.
+    const rawPoolInfoForCalc = sdkFetchedPoolDataRaw.poolInfo;
+    const rawPoolKeysForCalc = sdkFetchedPoolDataRaw.poolKeys; // Needed for some fields in MySdkPoolInfo
+    const lpMintFromInfo = transformTokenInfo(rawPoolInfoForCalc.lpMint, 'poolInfo.lpMint');
+    const lpAmountNumber = parseFloat(rawPoolInfoForCalc.lpAmount);
+    const processedLivePoolInfoForCalc: MySdkPoolInfo = {
+        id: new PublicKey(rawPoolInfoForCalc.id),
+        version: parseInt(rawPoolInfoForCalc.version, 10),
+        status: new BN(rawPoolInfoForCalc.status.toString()),
+        programId: new PublicKey(rawPoolInfoForCalc.programId),
+        mintA: transformTokenInfo(rawPoolInfoForCalc.mintA, 'poolInfo.mintA'),
+        mintB: transformTokenInfo(rawPoolInfoForCalc.mintB, 'poolInfo.mintB'),
         lpMint: lpMintFromInfo,
-        baseReserve: new BN(rawPoolInfoFromSDK.baseReserve.toString()),
-        quoteReserve: new BN(rawPoolInfoFromSDK.quoteReserve.toString()),
+        baseReserve: new BN(rawPoolInfoForCalc.baseReserve.toString()),
+        quoteReserve: new BN(rawPoolInfoForCalc.quoteReserve.toString()),
         lpSupply: new BN(String(Math.floor(lpAmountNumber * Math.pow(10, lpMintFromInfo.decimals)))),
-        openTime: new BN(rawPoolInfoFromSDK.openTime.toString()),
-        marketId: new PublicKey(rawPoolInfoFromSDK.marketId),
+        openTime: new BN(rawPoolInfoForCalc.openTime.toString()),
+        marketId: new PublicKey(rawPoolInfoForCalc.marketId),
         fees: {
-            swapFeeNumerator: new BN(rawPoolInfoFromSDK.fees?.swapFeeNumerator?.toString() || Math.round(parseFloat(rawPoolInfoFromSDK.feeRate) * 10000)),
-            swapFeeDenominator: new BN(rawPoolInfoFromSDK.fees?.swapFeeDenominator?.toString() || 10000),
-            hostFeeNumerator: new BN(rawPoolInfoFromSDK.fees?.hostFeeNumerator?.toString() || '0'),
-            hostFeeDenominator: new BN(rawPoolInfoFromSDK.fees?.hostFeeDenominator?.toString() || '0'),
+            swapFeeNumerator: new BN(rawPoolInfoForCalc.fees?.swapFeeNumerator?.toString() || Math.round(parseFloat(rawPoolInfoForCalc.feeRate) * 10000)),
+            swapFeeDenominator: new BN(rawPoolInfoForCalc.fees?.swapFeeDenominator?.toString() || 10000),
+            hostFeeNumerator: new BN(rawPoolInfoForCalc.fees?.hostFeeNumerator?.toString() || '0'),
+            hostFeeDenominator: new BN(rawPoolInfoForCalc.fees?.hostFeeDenominator?.toString() || '0'),
         },
-        authority: new PublicKey(rawPoolKeysFromSDK.authority),
-        openOrders: new PublicKey(rawPoolKeysFromSDK.openOrders),
-        targetOrders: new PublicKey(rawPoolKeysFromSDK.targetOrders),
-        baseVault: new PublicKey(rawPoolKeysFromSDK.vault.A),
-        quoteVault: new PublicKey(rawPoolKeysFromSDK.vault.B),
-        configId: rawPoolInfoFromSDK.configId ? new PublicKey(rawPoolInfoFromSDK.configId) : undefined,
-        baseDecimals: rawPoolInfoFromSDK.mintA.decimals,
-        quoteDecimals: rawPoolInfoFromSDK.mintB.decimals,
-        lpDecimals: rawPoolInfoFromSDK.lpMint.decimals,
-        price: parseFloat(rawPoolInfoFromSDK.price),
+        authority: new PublicKey(rawPoolKeysForCalc.authority),
+        openOrders: new PublicKey(rawPoolKeysForCalc.openOrders),
+        targetOrders: new PublicKey(rawPoolKeysForCalc.targetOrders),
+        baseVault: new PublicKey(rawPoolKeysForCalc.vault.A),
+        quoteVault: new PublicKey(rawPoolKeysForCalc.vault.B),
+        configId: rawPoolInfoForCalc.configId ? new PublicKey(rawPoolInfoForCalc.configId) : undefined,
+        baseDecimals: rawPoolInfoForCalc.mintA.decimals,
+        quoteDecimals: rawPoolInfoForCalc.mintB.decimals,
+        lpDecimals: rawPoolInfoForCalc.lpMint.decimals,
+        price: parseFloat(rawPoolInfoForCalc.price),
     };
 
-    const processedLivePoolKeys: MyAmmV4Keys = {
-        id: new PublicKey(rawPoolKeysFromSDK.id),
-        programId: new PublicKey(rawPoolKeysFromSDK.programId),
-        baseMint: new PublicKey(rawPoolKeysFromSDK.mintA.address),
-        quoteMint: new PublicKey(rawPoolKeysFromSDK.mintB.address),
-        lpMint: new PublicKey(rawPoolKeysFromSDK.mintLp.address),
-        version: parseInt(rawPoolInfoFromSDK.version, 10),
-        authority: new PublicKey(rawPoolKeysFromSDK.authority),
-        openOrders: new PublicKey(rawPoolKeysFromSDK.openOrders),
-        targetOrders: new PublicKey(rawPoolKeysFromSDK.targetOrders),
-        baseVault: new PublicKey(rawPoolKeysFromSDK.vault.A),
-        quoteVault: new PublicKey(rawPoolKeysFromSDK.vault.B),
-        marketProgramId: new PublicKey(rawPoolKeysFromSDK.marketProgramId),
-        marketId: new PublicKey(rawPoolKeysFromSDK.marketId),
-        marketAuthority: new PublicKey(rawPoolKeysFromSDK.marketAuthority),
-        marketBaseVault: new PublicKey(rawPoolKeysFromSDK.marketBaseVault),
-        marketQuoteVault: new PublicKey(rawPoolKeysFromSDK.marketQuoteVault),
-        marketBids: new PublicKey(rawPoolKeysFromSDK.marketBids),
-        marketAsks: new PublicKey(rawPoolKeysFromSDK.marketAsks),
-        marketEventQueue: new PublicKey(rawPoolKeysFromSDK.marketEventQueue),
-    };
-    // --- End Data Transformation ---
-
-    // 3. Determine Output Mint (same as before)
     let outputMintPk: PublicKey;
-    const sdkMintA_pk = processedLivePoolInfo.mintA.address;
-    const sdkMintB_pk = processedLivePoolInfo.mintB.address;
-    if (sdkMintA_pk.equals(inputMintPk)) { outputMintPk = sdkMintB_pk;}
-    else if (sdkMintB_pk.equals(inputMintPk)) { outputMintPk = sdkMintA_pk;}
-    else { throw new Error('SDK pool mints (after processing) do not include input SOL mint.'); }
+    if (processedLivePoolInfoForCalc.mintA.address.equals(inputMintPk)) { outputMintPk = processedLivePoolInfoForCalc.mintB.address; }
+    else if (processedLivePoolInfoForCalc.mintB.address.equals(inputMintPk)) { outputMintPk = processedLivePoolInfoForCalc.mintA.address; }
+    else { throw new Error('Pool mints do not include input SOL mint.'); }
     console.log(`[mainnetBuySwap Refactored] Determined Output Mint: ${outputMintPk.toBase58()}`);
 
-    // 4. Calculate minAmountOut (same as before, assuming getStandardPoolUiData is fixed)
-    console.log("[mainnetBuySwap Refactored] Calculating minAmountOut via ammSwapCalculator...");
-    const uiPoolReserves: UiPoolReserves | null = getStandardPoolUiData(processedLivePoolInfo, inputMintPk.toBase58());
-    if (!uiPoolReserves) throw new Error('Could not prepare UI pool reserves for calculation.');
+    console.log("[mainnetBuySwap Refactored] Calculating minAmountOut via ammSwapCalculator (using transformed data)...");
+    const uiPoolReserves: UiPoolReserves | null = getStandardPoolUiData(processedLivePoolInfoForCalc, inputMintPk.toBase58());
+    if (!uiPoolReserves) throw new Error('Could not prepare UI pool reserves.');
     const swapQuote: SwapTransactionQuote | null = calculateStandardAmmSwapQuote(buyAmountSOLFloat, true, uiPoolReserves, slippagePercent);
     if (!swapQuote || !swapQuote.minAmountOutRaw || swapQuote.minAmountOutRaw.isZero()) {
-        throw new Error('Manual minAmountOut calculation resulted in zero or failed.');
+        throw new Error('minAmountOut calculation failed.');
     }
     const minAmountOut = swapQuote.minAmountOutRaw;
-    console.log(`[mainnetBuySwap Refactored] Manually Calculated minAmountOut: ${minAmountOut.toString()}`);
+    console.log(`[mainnetBuySwap Refactored] Calculated minAmountOut: ${minAmountOut.toString()}`);
 
-    // 5. Call SwapHelpers to get the transaction payload (same as before)
-    console.log("[mainnetBuySwap Refactored] Calling SwapHelpers.createAmmV4SwapTransactionPayload...");
+
+    console.log("[mainnetBuySwap Refactored] Calling SwapHelpers.createAmmV4SwapTransactionPayload (passing raw SDK pool data)...");
     let swapPayload: MyLiquiditySwapPayload;
     try {
         swapPayload = await createAmmV4SwapTransactionPayload({
-            sdk, // This SDK instance is now initialized with the user's context
-            poolInfo: processedLivePoolInfo,
-            poolKeys: processedLivePoolKeys,
-            userPublicKey: payer, // This is passed to SwapHelpers
-            inputTokenMint: inputMintPk,
-            outputTokenMint: outputMintPk,
+            sdk,
+            // IMPORTANT: Pass the raw objects from the SDK to SwapHelpers
+            poolInfoFromSdk: sdkFetchedPoolDataRaw.poolInfo,
+            poolKeysFromSdk: sdkFetchedPoolDataRaw.poolKeys,
+            userPublicKey: payer,
+            inputTokenMint: inputMintPk,  // This is NATIVE_MINT (PublicKey)
+            outputTokenMint: outputMintPk, // This is a PublicKey
             amountIn: amountInLamports,
             minAmountOut: minAmountOut,
         });
     } catch(e: any) {
-        console.error(`SwapHelper createAmmV4SwapTransactionPayload failed: ${e.message || 'Unknown error'}`, e);
+        // ... (error handling) ...
         throw e;
     }
 
+    // ... (transaction signing and sending logic remains the same) ...
     if (!swapPayload || !swapPayload.transaction) {
         throw new Error("SwapHelpers did not return a valid transaction payload.");
     }
     const transaction: VersionedTransaction = swapPayload.transaction;
 
-    // 6. Sign and Send Transaction (same as before)
-    console.log("[mainnetBuySwap Refactored] Requesting wallet to sign transaction...");
+    console.log("[mainnetBuySwap Refactored] Requesting wallet to sign main swap transaction...");
     const signedTx = await wallet.signTransaction(transaction);
-    if (!signedTx) throw new Error("Transaction not signed by wallet.");
+    if (!signedTx) throw new Error("Main swap transaction not signed by wallet.");
 
-    console.log("[mainnetBuySwap Refactored] Sending raw transaction...");
-    const txSignature = await connection.sendRawTransaction(signedTx.serialize()); // Uses Helius connection
-    console.log(`[mainnetBuySwap Refactored] Transaction sent. Signature: ${txSignature}`);
+    console.log("[mainnetBuySwap Refactored] Sending raw main swap transaction...");
+    const txSignature = await connection.sendRawTransaction(signedTx.serialize(), { skipPreflight: true, maxRetries: 5 });
+    console.log(`[mainnetBuySwap Refactored] Main swap transaction sent. Signature: ${txSignature}`);
 
-    console.log("[mainnetBuySwap Refactored] Confirming transaction...");
-    const { value: rpcBlockhashContext } = await connection.getLatestBlockhashAndContext('confirmed');
-    const confirmation = await connection.confirmTransaction({
+    console.log("[mainnetBuySwap Refactored] Confirming main swap transaction...");
+    const latestBlockhashForConfirmation = await connection.getLatestBlockhashAndContext('confirmed');
+    const mainSwapConfirmation = await connection.confirmTransaction({
         signature: txSignature,
-        blockhash: transaction.message.recentBlockhash || rpcBlockhashContext.blockhash,
-        lastValidBlockHeight: transaction.message.recentBlockhash ?
-            (await connection.getBlockHeight('confirmed')) :
-            rpcBlockhashContext.lastValidBlockHeight,
+        blockhash: transaction.message.recentBlockhash || latestBlockhashForConfirmation.value.blockhash,
+        lastValidBlockHeight: latestBlockhashForConfirmation.value.lastValidBlockHeight,
     }, 'confirmed');
 
-    if (confirmation.value.err) {
-        throw new Error(`Transaction failed confirmation: ${JSON.stringify(confirmation.value.err)}`);
+    if (mainSwapConfirmation.value.err) {
+        throw new Error(`Main swap transaction failed confirmation: ${JSON.stringify(mainSwapConfirmation.value.err)}`);
     }
-    console.log(`[mainnetBuySwap Refactored] --- SWAP SUCCESSFUL --- Signature: ${txSignature}`);
+    console.log(`[mainnetBuySwap Refactored] --- SWAP SUCCESSFUL (FindDecoder Approach) --- Signature: ${txSignature}`);
     return txSignature;
 }

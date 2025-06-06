@@ -368,7 +368,7 @@ function TradingInterface({
 
             if (["Standard", "CPMM", "CPMM_DEVNET_SEEDED", "CPMM_DEVNET_CREATED"].includes(selectedPool.type)) {
                 if (network === 'mainnet-beta') {
-                    const txSignature = await mainnetSellSwap(wallet, connection, selectedPool, sellAmountTokensFloat, slippage);
+                    const txSignature = await mainnetSellSwap(wallet, connection, selectedPool, sellAmountTokensFloat, slippage, tokenAddress);
                     setNotification({ show: true, message: `Sell successful! Tx: ${txSignature.substring(0, 10)}...`, type: 'success' });
                     console.log("[handleSell] Mainnet Sell swap successful, Tx:", txSignature);
                 } else {
