@@ -4,218 +4,143 @@ import {
     PublicKey,
     VersionedTransaction,
 } from '@solana/web3.js';
-import { 
-    NATIVE_MINT, 
-} from '@solana/spl-token';
+import { NATIVE_MINT } from '@solana/spl-token';
 import BN from 'bn.js';
 import Decimal from 'decimal.js';
+import { bs58 } from '@coral-xyz/anchor/dist/cjs/utils/bytes'; // For decoding base64 transaction
 
-import { DiscoveredPoolDetailed } from './poolFinder';
-import {
-    createAmmV4SwapTransactionPayload,
-    MySdkPoolInfo, // Using your existing interfaces for consistency with calculator
-    MyAmmV4Keys,
-    MyLiquiditySwapPayload,
-    MyTokenInfoFromSDK
-} from './SwapHelpers'; // Ensure SwapHelpers is the version that uses raw SDK pool data
-import {
-    getStandardPoolUiData,
-    calculateStandardAmmSwapQuote,
-    UiPoolReserves,
-    SwapTransactionQuote
-} from './ammSwapCalculator';
-import { initRaydiumSdkForUser } from './initRaydiumSdk';
+// We no longer need most of the other local imports for the swap itself,
+// as Jupiter handles the logic. We only need the wallet and connection.
 
-import type { Raydium } from '@raydium-io/raydium-sdk-v2';
-
-const toPublicKey = (key: string | PublicKey): PublicKey => typeof key === 'string' ? new PublicKey(key) : key;
-
-const transformTokenInfo = (rawTokenInfo: any, fieldNameForError: string): MyTokenInfoFromSDK => {
-    const addressStr = rawTokenInfo?.address?.toString();
-    const programIdStr = rawTokenInfo?.programId?.toString();
-    const decimalsNum = rawTokenInfo?.decimals;
-
-    if (!addressStr || !programIdStr || typeof decimalsNum !== 'number') {
-        console.error(`Raw token info for '${fieldNameForError}' is missing or has invalid fields (address, programId, decimals). Received:`, rawTokenInfo);
-        throw new Error(`Invalid raw token info structure for ${fieldNameForError}.`);
-    }
-    return {
-        address: new PublicKey(addressStr),
-        programId: new PublicKey(programIdStr),
-        decimals: decimalsNum,
-        chainId: rawTokenInfo.chainId,
-        logoURI: rawTokenInfo.logoURI || "",
-        symbol: rawTokenInfo.symbol || "",
-        name: rawTokenInfo.name || "",
-        tags: Array.isArray(rawTokenInfo.tags) ? rawTokenInfo.tags : [],
-        extensions: typeof rawTokenInfo.extensions === 'object' && rawTokenInfo.extensions !== null ? rawTokenInfo.extensions : {},
-    };
-};
-
-
+/**
+ * [REWRITTEN] Orchestrates a sell swap from SPL token → SOL using the Jupiter Aggregator API.
+ * This is more robust and finds the best route for the swap.
+ *
+ * @param wallet                 - Your wallet adapter (must have `publicKey` and `signTransaction`).
+ * @param connection             - A confirmed Connection instance pointing to mainnet.
+ * @param sellAmountTokenFloat   - How many SPL tokens (in human units) you want to sell.
+ * @param slippageBps            - Slippage tolerance in basis points (e.g., 50 for 0.5%).
+ * @param inputTokenActualMint   - The string of the SPL token mint you are selling.
+ *
+ * @returns The confirmed transaction signature once the swap succeeds.
+ * @throws If any step fails (API errors, signing rejected, on-chain error, etc.).
+ */
 export async function mainnetSellSwap(
     wallet: any, 
     connection: Connection,
-    selectedPoolFromFinder: DiscoveredPoolDetailed | null,
+    // selectedPoolFromFinder is no longer needed as Jupiter finds the best pool
+    selectedPoolFromFinder: any | null, 
     sellAmountTokenFloat: number, 
-    slippagePercent: number,
+    slippagePercent: number, // We'll convert this to BPS for Jupiter
     inputTokenActualMint: string 
 ): Promise<string> {
-    console.log('[mainnetSellSwap] --- Orchestrating AMM V4 Sell Swap (Token for SOL, FindDecoder Approach) ---');
+    console.log('[mainnetSellSwap] --- Starting Sell Swap via Jupiter Aggregator ---');
 
-    if (!selectedPoolFromFinder) {
-        throw new Error("No pool selected for the sell swap.");
-    }
+    // 1) Basic parameter validation
     if (sellAmountTokenFloat <= 0) {
-        throw new Error("Sell amount must be greater than zero.");
+        throw new Error('Sell amount must be greater than zero.');
     }
-    if (!inputTokenActualMint || typeof inputTokenActualMint !== 'string') {
-        throw new Error("Input token mint address (string) is required for selling.");
-    }
-
-    const payer: PublicKey = toPublicKey(wallet.publicKey);
-    const inputTokenMintPk = new PublicKey(inputTokenActualMint); 
-    const outputTokenMintPk = NATIVE_MINT; // Output is SOL (via WSOL)
-
-    console.log(`[mainnetSellSwap] Payer: ${payer.toBase58()}`);
-    console.log(`[mainnetSellSwap] Target Pool ID: ${selectedPoolFromFinder.id}`);
-    console.log(`[mainnetSellSwap] Selling Token Mint: ${inputTokenMintPk.toBase58()}`);
-    console.log(`[mainnetSellSwap] Receiving Mint (SOL/WSOL): ${outputTokenMintPk.toBase58()}`);
-    console.log(`[mainnetSellSwap] Sell Amount (Tokens): ${sellAmountTokenFloat}`);
-
-    if (selectedPoolFromFinder.programId !== "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8") {
-        throw new Error(`This utility is for AMM V4 pools. Program ID mismatch: ${selectedPoolFromFinder.programId}`);
+    if (!inputTokenActualMint) {
+        throw new Error('Input token mint address is required.');
     }
 
-    console.log(`[mainnetSellSwap] Initializing SDK with connection (RPC: ${connection.rpcEndpoint}) and payer: ${payer.toBase58()}`);
-    const sdk: Raydium = await initRaydiumSdkForUser(connection, payer);
-
-    if (!sdk || !sdk.liquidity || !sdk.liquidity.getPoolInfoFromRpc || !sdk.liquidity.swap) {
-        throw new Error('Raydium SDK instance or required liquidity functions not available!');
+    const userPublicKey = wallet.publicKey;
+    if (!userPublicKey) {
+        throw new Error("Wallet not connected.");
     }
 
-    console.log(`[mainnetSellSwap] Fetching live pool data for ID: ${selectedPoolFromFinder.id}`);
-    let sdkFetchedPoolDataRaw: any;
-    try {
-        sdkFetchedPoolDataRaw = await sdk.liquidity.getPoolInfoFromRpc({ poolId: selectedPoolFromFinder.id });
-        if (!sdkFetchedPoolDataRaw || !sdkFetchedPoolDataRaw.poolInfo || !sdkFetchedPoolDataRaw.poolKeys) {
-            throw new Error("SDK's getPoolInfoFromRpc failed to return poolInfo and poolKeys.");
-        }
-        console.log("[mainnetSellSwap DEBUG] Raw poolInfo direct from SDK:", JSON.stringify(sdkFetchedPoolDataRaw.poolInfo, null, 2));
-        // *** CORRECTED LINE BELOW ***
-        console.log("[mainnetSellSwap DEBUG] Raw poolKeys direct from SDK:", JSON.stringify(sdkFetchedPoolDataRaw.poolKeys, null, 2));
-    } catch (e: any) {
-        console.error(`Error fetching pool info from RPC for pool ${selectedPoolFromFinder.id}: ${e.message || 'Unknown RPC error'}`, e);
-        throw e;
+    // Get input token info to calculate amount in lamports
+    const inputToken = new PublicKey(inputTokenActualMint);
+    const tokenInfo = await connection.getParsedAccountInfo(inputToken);
+    if (!tokenInfo.value || !('parsed' in tokenInfo.value.data)) {
+        throw new Error("Could not fetch token info to determine decimals.");
     }
+    const inputTokenDecimals = tokenInfo.value.data.parsed.info.decimals;
 
-    const rawPoolInfoForCalc = sdkFetchedPoolDataRaw.poolInfo;
-    const rawPoolKeysForCalc = sdkFetchedPoolDataRaw.poolKeys;
+    const amountInLamports = new BN(
+        new Decimal(sellAmountTokenFloat)
+          .mul(new Decimal(10).pow(inputTokenDecimals))
+          .toFixed(0)
+    );
+    
+    // Convert slippage from percent to basis points (BPS) for Jupiter
+    const slippageBps = slippagePercent * 100;
 
-    let inputTokenDecimals: number;
-    const poolMintA = new PublicKey(rawPoolInfoForCalc.mintA.address);
-    const poolMintB = new PublicKey(rawPoolInfoForCalc.mintB.address);
+    console.log(`[mainnetSellSwap] Payer: ${userPublicKey.toBase58()}`);
+    console.log(`[mainnetSellSwap] Selling Token: ${inputToken.toBase58()}`);
+    console.log(`[mainnetSellSwap] Sell Amount (lamports): ${amountInLamports.toString()}`);
+    console.log(`[mainnetSellSwap] Slippage: ${slippagePercent}% (${slippageBps} BPS)`);
 
-    if (poolMintA.equals(inputTokenMintPk)) {
-        inputTokenDecimals = rawPoolInfoForCalc.mintA.decimals;
-    } else if (poolMintB.equals(inputTokenMintPk)) {
-        inputTokenDecimals = rawPoolInfoForCalc.mintB.decimals;
-    } else {
-        throw new Error(`Input token mint ${inputTokenMintPk.toBase58()} not found in the selected pool's mints (A: ${poolMintA.toBase58()}, B: ${poolMintB.toBase58()}).`);
+
+    // --- STEP 1: Get a Quote from Jupiter API ---
+    console.log(`[mainnetSellSwap] Fetching quote from Jupiter...`);
+    
+    const quoteUrl = `https://quote-api.jup.ag/v6/quote?inputMint=${inputToken.toBase58()}&outputMint=${NATIVE_MINT.toBase58()}&amount=${amountInLamports.toString()}&slippageBps=${slippageBps}`;
+    const quoteResponse = await (await fetch(quoteUrl)).json();
+
+    if (!quoteResponse || quoteResponse.error) {
+        console.error("Jupiter Quote API Error:", quoteResponse?.error);
+        throw new Error(`Failed to get quote from Jupiter: ${quoteResponse?.error || 'Unknown error'}`);
     }
-    console.log(`[mainnetSellSwap] Input Token Decimals: ${inputTokenDecimals}`);
-    const amountInLamports = new BN(new Decimal(sellAmountTokenFloat).mul(Math.pow(10, inputTokenDecimals)).toFixed(0));
-    console.log(`[mainnetSellSwap] Sell Amount (Lamports of input token): ${amountInLamports.toString()}`);
+    console.log(`[mainnetSellSwap] Quote received: Selling ${sellAmountTokenFloat} tokens for ~${new Decimal(quoteResponse.outAmount).div(10**9).toFixed(6)} SOL`);
 
-    const lpMintFromInfo = transformTokenInfo(rawPoolInfoForCalc.lpMint, 'poolInfo.lpMint');
-    const lpAmountNumber = parseFloat(rawPoolInfoForCalc.lpAmount);
-    if (isNaN(lpAmountNumber) || typeof rawPoolInfoForCalc.lpMint?.decimals !== 'number') {
-        throw new Error('lpAmount or lpMint.decimals from rawPoolInfo is invalid or missing for lpSupply calculation.');
-    }
-    const processedLivePoolInfoForCalc: MySdkPoolInfo = {
-        id: new PublicKey(rawPoolInfoForCalc.id),
-        version: parseInt(rawPoolInfoForCalc.version, 10),
-        status: new BN(rawPoolInfoForCalc.status.toString()),
-        programId: new PublicKey(rawPoolInfoForCalc.programId),
-        mintA: transformTokenInfo(rawPoolInfoForCalc.mintA, 'poolInfo.mintA'),
-        mintB: transformTokenInfo(rawPoolInfoForCalc.mintB, 'poolInfo.mintB'),
-        lpMint: lpMintFromInfo,
-        baseReserve: new BN(rawPoolInfoForCalc.baseReserve.toString()),
-        quoteReserve: new BN(rawPoolInfoForCalc.quoteReserve.toString()),
-        lpSupply: new BN(String(Math.floor(lpAmountNumber * Math.pow(10, lpMintFromInfo.decimals)))),
-        openTime: new BN(rawPoolInfoForCalc.openTime.toString()),
-        marketId: new PublicKey(rawPoolInfoForCalc.marketId),
-        fees: {
-            swapFeeNumerator: new BN(rawPoolInfoForCalc.fees?.swapFeeNumerator?.toString() || Math.round(parseFloat(rawPoolInfoForCalc.feeRate) * 10000)),
-            swapFeeDenominator: new BN(rawPoolInfoForCalc.fees?.swapFeeDenominator?.toString() || 10000),
-            hostFeeNumerator: new BN(rawPoolInfoForCalc.fees?.hostFeeNumerator?.toString() || '0'),
-            hostFeeDenominator: new BN(rawPoolInfoForCalc.fees?.hostFeeDenominator?.toString() || '0'),
+
+    // --- STEP 2: Get the Swap Transaction from Jupiter API ---
+    console.log("[mainnetSellSwap] Fetching swap transaction from Jupiter...");
+    
+    const swapResponse = await (await fetch('https://quote-api.jup.ag/v6/swap', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
         },
-        authority: new PublicKey(rawPoolKeysForCalc.authority),
-        openOrders: new PublicKey(rawPoolKeysForCalc.openOrders),
-        targetOrders: new PublicKey(rawPoolKeysForCalc.targetOrders),
-        baseVault: new PublicKey(rawPoolKeysForCalc.vault.A),
-        quoteVault: new PublicKey(rawPoolKeysForCalc.vault.B),
-        configId: rawPoolInfoForCalc.configId ? new PublicKey(rawPoolInfoForCalc.configId) : undefined,
-        baseDecimals: rawPoolInfoForCalc.mintA.decimals,
-        quoteDecimals: rawPoolInfoForCalc.mintB.decimals,
-        lpDecimals: rawPoolInfoForCalc.lpMint.decimals,
-        price: parseFloat(rawPoolInfoForCalc.price),
-    };
+        body: JSON.stringify({
+            quoteResponse,
+            userPublicKey: userPublicKey.toBase58(),
+            wrapAndUnwrapSol: true, // This handles WSOL automatically
+        })
+    })).json();
 
-    console.log("[mainnetSellSwap] Calculating minAmountOut (SOL) via ammSwapCalculator...");
-    const uiPoolReserves: UiPoolReserves | null = getStandardPoolUiData(processedLivePoolInfoForCalc, inputTokenMintPk.toBase58());
-    if (!uiPoolReserves) throw new Error('Could not prepare UI pool reserves for calculation.');
-
-    const swapQuote: SwapTransactionQuote | null = calculateStandardAmmSwapQuote(sellAmountTokenFloat, false, uiPoolReserves, slippagePercent);
-    if (!swapQuote || !swapQuote.minAmountOutRaw || swapQuote.minAmountOutRaw.isZero()) {
-        throw new Error('Manual minAmountOut (SOL) calculation resulted in zero or failed.');
+    if (!swapResponse || !swapResponse.swapTransaction) {
+        console.error("Jupiter Swap API Error:", swapResponse?.error);
+        throw new Error(`Failed to get transaction from Jupiter: ${swapResponse?.error || 'Unknown error'}`);
     }
-    const minAmountOutLamports = swapQuote.minAmountOutRaw;
-    console.log(`[mainnetSellSwap] Calculated minAmountOut (SOL lamports): ${minAmountOutLamports.toString()}`);
+    const swapTransactionB64 = swapResponse.swapTransaction;
 
-    console.log("[mainnetSellSwap] Calling SwapHelpers.createAmmV4SwapTransactionPayload (Token for SOL)...");
-    let swapPayload: MyLiquiditySwapPayload;
-    try {
-        swapPayload = await createAmmV4SwapTransactionPayload({
-            sdk,
-            poolInfoFromSdk: sdkFetchedPoolDataRaw.poolInfo,
-            poolKeysFromSdk: sdkFetchedPoolDataRaw.poolKeys,
-            userPublicKey: payer,
-            inputTokenMint: inputTokenMintPk,
-            outputTokenMint: outputTokenMintPk,
-            amountIn: amountInLamports,
-            minAmountOut: minAmountOutLamports,
-        });
-    } catch(e: any) {
-        console.error(`SwapHelper createAmmV4SwapTransactionPayload failed: ${e.message || 'Unknown error'}`, e);
-        throw e;
-    }
 
-    if (!swapPayload || !swapPayload.transaction) {
-        throw new Error("SwapHelpers did not return a valid transaction payload.");
-    }
-    const transaction: VersionedTransaction = swapPayload.transaction;
+    // --- STEP 3: Deserialize, Sign, and Send the Transaction ---
+    console.log("[mainnetSellSwap] Deserializing transaction...");
+    const swapTransactionBuf = Buffer.from(swapTransactionB64, 'base64');
+    const transaction = VersionedTransaction.deserialize(swapTransactionBuf);
+    console.log("[mainnetSellSwap] Transaction deserialized.");
 
-    console.log("[mainnetSellSwap] Requesting wallet to sign main sell transaction...");
+    console.log("[mainnetSellSwap] Requesting wallet signature...");
     const signedTx = await wallet.signTransaction(transaction);
-    if (!signedTx) throw new Error("Main sell transaction not signed by wallet.");
+    if (!signedTx) {
+        throw new Error('Sell transaction was not signed by the wallet.');
+    }
+    console.log("[mainnetSellSwap] Transaction signed.");
 
-    console.log("[mainnetSellSwap] Sending raw main sell transaction...");
-    const txSignature = await connection.sendRawTransaction(signedTx.serialize(), { skipPreflight: true, maxRetries: 5 });
-    console.log(`[mainnetSellSwap] Main sell transaction sent. Signature: ${txSignature}`);
+    console.log("[mainnetSellSwap] Sending raw transaction...");
+    const txSignature = await connection.sendRawTransaction(signedTx.serialize(), {
+        skipPreflight: false, // It's good practice to let the RPC run preflight checks
+        maxRetries: 5,
+    });
+    console.log(`[mainnetSellSwap] Transaction sent. Signature: ${txSignature}`);
 
-    console.log("[mainnetSellSwap] Confirming main sell transaction...");
-    const latestBlockhashForConfirmation = await connection.getLatestBlockhashAndContext('confirmed');
-    const mainSwapConfirmation = await connection.confirmTransaction({
+    console.log("[mainnetSellSwap] Confirming transaction...");
+    const latest = await connection.getLatestBlockhashAndContext('confirmed');
+    const confirmation = await connection.confirmTransaction({
         signature: txSignature,
-        blockhash: transaction.message.recentBlockhash || latestBlockhashForConfirmation.value.blockhash,
-        lastValidBlockHeight: latestBlockhashForConfirmation.value.lastValidBlockHeight,
+        blockhash: latest.value.blockhash,
+        lastValidBlockHeight: latest.value.lastValidBlockHeight,
     }, 'confirmed');
 
-    if (mainSwapConfirmation.value.err) {
-        throw new Error(`Main sell transaction failed confirmation: ${JSON.stringify(mainSwapConfirmation.value.err)}`);
+    if (confirmation.value.err) {
+        console.error('❌ Transaction confirmed with an error:', confirmation.value.err);
+        throw new Error(`Sell transaction failed after sending: ${JSON.stringify(confirmation.value.err)}`);
     }
-    console.log(`[mainnetSellSwap] --- SELL SWAP SUCCESSFUL (Token for SOL) --- Signature: ${txSignature}`);
+
+    console.log(`[mainnetSellSwap] --- JUPITER SELL SWAP SUCCESSFUL! --- Signature: ${txSignature}`);
     return txSignature;
 }
+
