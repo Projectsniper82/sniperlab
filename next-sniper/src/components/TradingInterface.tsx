@@ -16,9 +16,7 @@ import { getSimulatedPool, updateSimulatedPoolAfterTrade } from '@/utils/simulat
 import { isRaydiumPool, swapRaydiumTokens } from '@/utils/raydiumSdkAdapter'; // Ensure this adapter is correctly set up
 import { DiscoveredPoolDetailed } from '@/utils/poolFinder';
 import { NetworkType, useNetwork } from '@/context/NetworkContext'; // Assuming useNetwork is correctly imported
-
-import { mainnetBuySwap } from '@/utils/mainnetBuyUtil';
-import { mainnetSellSwap } from '@/utils/mainnetSellSwap';
+import { executeJupiterSwap } from '@/utils/jupiterSwapUtil';
 // ... rest of your TradingInterfaceProps and component
 
 type NotificationType = 'success' | 'error' | 'info' | '';
@@ -36,6 +34,9 @@ interface TradingInterfaceProps {
     setNotification: React.Dispatch<React.SetStateAction<{ show: boolean; message: string; type: NotificationType; }>>;
     network: NetworkType;
     isPoolSelected: boolean;
+    // New props for Jupiter
+    priceInSol: number | null;
+    isPriceLoading: boolean;
 }
 
 Decimal.set({ precision: 50 });
@@ -265,219 +266,281 @@ function TradingInterface({
     }, [poolDataForCalculations]);
 
 
-    const handleBuy = async () => {
-        console.log('------------------------------------------------------');
-        console.log('[TradingInterface DEBUG handleBuy] Swap initiated by user.');
-        console.log('[TradingInterface DEBUG handleBuy] Network prop:', network);
-        if (selectedPool) {
-            console.log('[TradingInterface DEBUG handleBuy] selectedPool prop received: id=', selectedPool.id, 'type=', selectedPool.type);
-        } else {
-             console.log('[TradingInterface DEBUG handleBuy] selectedPool prop is NULL or UNDEFINED.');
+const handleBuy = async () => {
+    if (!wallet?.publicKey || !isPoolSelected) {
+        setErrorMessage("Wallet not connected or no valid pool/route selected.");
+        return;
+    }
+
+    const buyAmountSOLFloat = parseFloat(buyAmount);
+    if (isNaN(buyAmountSOLFloat) || buyAmountSOLFloat <= 0) {
+        setErrorMessage("Please enter a valid SOL amount to buy");
+        return;
+    }
+
+    if (buyAmountSOLFloat > solBalance) {
+        setErrorMessage("Not enough SOL balance");
+        return;
+    }
+
+    setIsLoading(true);
+    setErrorMessage('');
+    setNotification({ show: true, message: `Processing buy on ${network}...`, type: 'info' });
+
+    try {
+        let txSignature: string;
+        const amountInLamports = new BN(new Decimal(buyAmountSOLFloat).mul(1e9).toFixed(0));
+        const slippageDecimal = slippage / 100;
+
+        if (network === 'mainnet-beta') {
+            txSignature = await executeJupiterSwap({
+                wallet,
+                connection,
+                inputMint: NATIVE_MINT,
+                outputMint: new PublicKey(tokenAddress),
+                amount: amountInLamports,
+                slippageBps: slippage * 100,
+            });
+        } else { // Devnet Logic is preserved
+            if (!selectedPool || !selectedPool.id) throw new Error("Devnet pool not selected.");
+            txSignature = await swapRaydiumTokens(wallet, connection, selectedPool.id, NATIVE_MINT.toBase58(), amountInLamports, slippageDecimal);
+            updateSimulatedPoolAfterTrade(tokenAddress, { solIn: buyAmountSOLFloat });
         }
+        
+        setNotification({ show: true, message: `Buy successful!`, type: 'success' });
+        await refreshBalances();
+        setBuyAmount('');
+    } catch (error: any) {
+        console.error(`[handleBuy] Error on ${network}:`, error);
+        setErrorMessage(`Buy Failed: ${error.message}`);
+        setNotification({ show: true, message: `Buy Failed: ${error.message.substring(0, 100)}`, type: 'error' });
+    } finally {
+        setIsLoading(false);
+    }
+};
 
-        console.log("[handleBuy] Current State (original log):", { buyAmount, solBalance, tokenAddress, tokenDecimals, slippage, selectedPoolId: selectedPool?.id });
-        console.log("[handleBuy] Wallet Prop PK (original log):", wallet?.publicKey?.toString());
+const handleSell = async () => {
+    if (!wallet?.publicKey || !isPoolSelected) {
+        setErrorMessage("Wallet not connected or no valid pool/route selected.");
+        return;
+    }
+    const sellAmountTokensFloat = parseFloat(sellAmount);
+    if (isNaN(sellAmountTokensFloat) || sellAmountTokensFloat <= 0) {
+        setErrorMessage("Please enter a valid token amount to sell");
+        return;
+    }
 
-        const buyAmountSOLFloat = parseFloat(buyAmount);
+    const rawTokenBalanceBN = new BN(tokenBalance);
+    const rawTokensToSell = new BN(new Decimal(sellAmountTokensFloat).mul(10 ** tokenDecimals).toFixed(0));
+    if (rawTokensToSell.gt(rawTokenBalanceBN)) {
+        setErrorMessage(`Not enough token balance.`);
+        return;
+    }
 
-        if (isNaN(buyAmountSOLFloat) || buyAmountSOLFloat <= 0) {
-            setErrorMessage("Please enter a valid SOL amount to buy");
-            return;
+    setIsLoading(true);
+    setErrorMessage('');
+    setNotification({ show: true, message: `Processing sell on ${network}...`, type: 'info' });
+
+    try {
+        let txSignature: string;
+        const slippageDecimal = slippage / 100;
+
+        if (network === 'mainnet-beta') {
+            txSignature = await executeJupiterSwap({
+                wallet,
+                connection,
+                inputMint: new PublicKey(tokenAddress),
+                outputMint: NATIVE_MINT,
+                amount: rawTokensToSell,
+                slippageBps: slippage * 100,
+            });
+        } else { // Devnet Logic is preserved
+            if (!selectedPool || !selectedPool.id) throw new Error("Devnet pool not selected.");
+            txSignature = await swapRaydiumTokens(wallet, connection, selectedPool.id, tokenAddress, rawTokensToSell, slippageDecimal);
+            updateSimulatedPoolAfterTrade(tokenAddress, { tokenIn: sellAmountTokensFloat });
         }
-        if (buyAmountSOLFloat > solBalance) {
-            setErrorMessage("Not enough SOL balance");
-            return;
-        }
-        if (!selectedPool || !selectedPool.id) {
-            setErrorMessage("No pool selected for trading.");
-            console.error('[TradingInterface CRITICAL handleBuy] Aborting: No pool selected or pool ID missing at decision point.');
-            setIsLoading(false);
-            return;
-        }
+        
+        setNotification({ show: true, message: 'Sell successful!', type: 'success' });
+        await refreshBalances();
+        setSellAmount('');
+    } catch (error: any) {
+        console.error(`[handleSell] Error on ${network}:`, error);
+        setErrorMessage(`Sell Error: ${error.message}`);
+        setNotification({ show: true, message: `Sell Failed: ${error.message.substring(0, 100)}`, type: 'error' });
+    } finally {
+        setIsLoading(false);
+    }
+};
+let priceToDisplay = currentPrice;
+const displayPriceString = typeof priceToDisplay === 'number' && priceToDisplay > 0
+    ? priceToDisplay.toFixed(Math.max(9, -Math.floor(Math.log10(priceToDisplay)) + 4))
+    : 'N/A';
 
-        setIsLoading(true);
-        setErrorMessage('');
+return (
+    <div className="bg-gray-900 p-4 sm:p-6 rounded-lg shadow-lg border border-gray-800 h-full flex flex-col">
+        <h2 className="text-xl font-bold mb-4 text-white">Raydium Trading</h2>
+        <div className="flex mb-4 bg-gray-800 rounded-lg p-1">
+            <button
+                className={`flex-1 py-2 px-4 rounded-lg transition-colors ${activeTab === 'buy' ? 'bg-green-600 text-white' : 'text-gray-400 hover:text-gray-200'}`}
+                onClick={() => setActiveTab('buy')}
+            >Buy Token</button>
+            <button
+                className={`flex-1 py-2 px-4 rounded-lg transition-colors ${activeTab === 'sell' ? 'bg-red-600 text-white' : 'text-gray-400 hover:text-gray-200'}`}
+                onClick={() => setActiveTab('sell')}
+            >Sell Token</button>
+        </div>
 
-        try {
-            const poolIdToUse = selectedPool.id;
-            const inputMint = NATIVE_MINT.toBase58();
-            const solLamportsIn = new BN(new Decimal(buyAmountSOLFloat).mul(1e9).toFixed(0));
-            const slippageDecimal = slippage / 100;
-
-            if (["Standard", "CPMM", "CPMM_DEVNET_SEEDED", "CPMM_DEVNET_CREATED"].includes(selectedPool.type)) {
-                if (network === 'mainnet-beta') {
-                    const txSignature = await mainnetBuySwap(wallet, connection, selectedPool, buyAmountSOLFloat, slippage);
-                    setNotification({ show: true, message: `Buy successful! Tx: ${txSignature.substring(0, 10)}...`, type: 'success' });
-                    console.log("[handleBuy] Mainnet Buy swap successful, Tx:", txSignature);
-                } else {
-                    const txSignature = await swapRaydiumTokens(wallet, connection, poolIdToUse, inputMint, solLamportsIn, slippageDecimal);
-                    setNotification({ show: true, message: `Buy successful! Tx: ${txSignature.substring(0, 10)}...`, type: 'success' });
-                    console.log("[handleBuy] Standard/CPMM Buy swap successful, Tx:", txSignature);
-                }
-            } else if (selectedPool.type === "Concentrated") {
-                setErrorMessage(`Swap for Concentrated pools (type: ${selectedPool.type}) not yet routed to correct CLMM swap function.`);
-                throw new Error(`CLMM swap logic not implemented / misrouted for pool type ${selectedPool.type}.`);
-            } else {
-                setErrorMessage(`Unknown pool type: ${selectedPool.type}`);
-                throw new Error(`Unknown pool type: ${selectedPool.type}`);
-            }
-
-            await refreshBalances();
-            setBuyAmount('');
-            setExpectedBuyOutput(0);
-            console.log("[handleBuy] Post-swap operations completed successfully.");
-
-        } catch (error: any) {
-            console.error(`[ERROR] handleBuy Error on ${network} for pool ${selectedPool?.id} (Type: ${selectedPool?.type}):`, error);
-            setErrorMessage(`Buy Error: ${error.message || 'Unknown error'}`);
-            setNotification({ show: true, message: `Buy Failed: ${error.message?.substring(0, 100)}...`, type: 'error' });
-        } finally {
-            setIsLoading(false);
-            setTimeout(() => setNotification(prev => (prev.message.includes("Buy successful") || prev.message.includes("Buy Failed")) ? { show: false, message: '', type: '' } : prev), 4000);
-        }
-    };
-
-    const handleSell = async () => {
-        console.log("[handleSell] Initiated on network:", network);
-        console.log("[handleSell] Current State:", { sellAmount, tokenBalance, tokenAddress, tokenDecimals, slippage, selectedPoolId: selectedPool?.id });
-        console.log("[handleSell] Wallet Prop PK:", wallet?.publicKey?.toString());
-
-        const sellAmountTokensFloat = parseFloat(sellAmount);
-
-        if (isNaN(sellAmountTokensFloat) || sellAmountTokensFloat <= 0) {
-            setErrorMessage("Please enter a valid token amount to sell"); return;
-        }
-
-        const rawTokenBalanceBN = new BN(tokenBalance);
-        const rawTokensToSell = new BN(new Decimal(sellAmountTokensFloat).mul(10 ** tokenDecimals).toFixed(0));
-
-        if (rawTokensToSell.gt(rawTokenBalanceBN)) {
-            setErrorMessage(`Not enough token balance.`); return;
-        }
-        if (!selectedPool || !selectedPool.id) {
-            setErrorMessage("No pool selected for trading."); return;
-        }
-
-        setIsLoading(true);
-        setErrorMessage('');
-
-        try {
-            const poolIdToUse = selectedPool.id;
-            const inputMint = tokenAddress;
-            const slippageDecimal = slippage / 100;
-
-            if (["Standard", "CPMM", "CPMM_DEVNET_SEEDED", "CPMM_DEVNET_CREATED"].includes(selectedPool.type)) {
-                if (network === 'mainnet-beta') {
-                    const txSignature = await mainnetSellSwap(wallet, connection, selectedPool, sellAmountTokensFloat, slippage, tokenAddress);
-                    setNotification({ show: true, message: `Sell successful! Tx: ${txSignature.substring(0, 10)}...`, type: 'success' });
-                    console.log("[handleSell] Mainnet Sell swap successful, Tx:", txSignature);
-                } else {
-                    const txSignature = await swapRaydiumTokens(wallet, connection, poolIdToUse, inputMint, rawTokensToSell, slippageDecimal);
-                    setNotification({ show: true, message: `Sell successful! Tx: ${txSignature.substring(0, 10)}...`, type: 'success' });
-                    console.log("[handleSell] Raydium Sell swap successful, Tx:", txSignature);
-                }
-            }  else if (selectedPool.type === "Concentrated") {
-                setErrorMessage(`Swap for Concentrated pools (type: ${selectedPool.type}) not yet routed to correct CLMM swap function.`);
-               throw new Error(`CLMM swap logic not implemented / misrouted for pool type ${selectedPool.type}.`);
-           } else {
-                setErrorMessage(`Unknown pool type: ${selectedPool.type}`);
-               throw new Error(`Unknown pool type: ${selectedPool.type}`);
-           }
-
-
-            await refreshBalances();
-            setSellAmount('');
-            setExpectedSellOutput(0);
-            console.log("[handleSell] Completed successfully.");
-
-        } catch (error: any) {
-            console.error(`[ERROR] handleSell Error on ${network}:`, error);
-            setErrorMessage(`Sell Error: ${error.message || 'Unknown error'}`);
-            setNotification({ show: true, message: `Sell Failed: ${error.message?.substring(0, 100)}...`, type: 'error' });
-        } finally {
-            setIsLoading(false);
-            setTimeout(() => setNotification(prev => (prev.message.includes("Sell successful") || prev.message.includes("Sell Failed")) ? { show: false, message: '', type: '' } : prev), 4000);
-        }
-    };
-
-    let priceToDisplay = currentPrice;
-    const displayPriceString = typeof priceToDisplay === 'number' && priceToDisplay > 0
-        ? priceToDisplay.toFixed(Math.max(9, -Math.floor(Math.log10(priceToDisplay)) + 4))
-        : 'N/A';
-
-
-    return (
-        <div className="bg-gray-900 p-4 sm:p-6 rounded-lg shadow-lg border border-gray-800 h-full flex flex-col">
-            <h2 className="text-xl font-bold mb-4 text-white">Raydium Trading</h2>
-            <div className="flex mb-4 bg-gray-800 rounded-lg p-1">
-                <button
-                    className={`flex-1 py-2 px-4 rounded-lg transition-colors ${activeTab === 'buy' ? 'bg-green-600 text-white' : 'text-gray-400 hover:text-gray-200'}`}
-                    onClick={() => setActiveTab('buy')}
-                >Buy Token</button>
-                <button
-                    className={`flex-1 py-2 px-4 rounded-lg transition-colors ${activeTab === 'sell' ? 'bg-red-600 text-white' : 'text-gray-400 hover:text-gray-200'}`}
-                    onClick={() => setActiveTab('sell')}
-                >Sell Token</button>
+        {errorMessage && (
+            <div className="mb-4 p-3 bg-red-900/50 border border-red-700 rounded text-red-300 text-sm break-words">
+                {errorMessage}
             </div>
+        )}
 
-            {errorMessage && (<div className="mb-4 p-3 bg-red-900/50 border border-red-700 rounded text-red-300 text-sm break-words">{errorMessage}</div>)}
-
-            <div className="mb-4 bg-gray-800 p-3 rounded-lg">
-                <div className="flex justify-between items-center">
-                    <span className="text-gray-400 text-sm">{selectedPool ? `Pool (${selectedPool.id.substring(0, 6)}...) Price:` : "Price (No Pool):"}</span>
-                    <span className="text-white font-semibold text-lg">{displayPriceString} <span className="text-xs text-gray-500"> SOL/Token</span></span>
-                </div>
+        <div className="mb-4 bg-gray-800 p-3 rounded-lg">
+            <div className="flex justify-between items-center">
+                <span className="text-gray-400 text-sm">
+                    {selectedPool ? `Pool (${selectedPool.id.substring(0, 6)}...) Price:` : "Price:"}
+                </span>
+                <span className="text-white font-semibold text-lg">
+                    {displayPriceString} <span className="text-xs text-gray-500"> SOL/Token</span>
+                </span>
             </div>
+        </div>
 
-            <div className="mb-4">
-                <label htmlFor="slippage-input" className="block text-gray-400 text-sm mb-1">Slippage Tolerance (%)</label>
-                <input id="slippage-input" type="number" value={slippage} onChange={(e) => setSlippage(parseFloat(e.target.value) || 0)} className="w-full p-2 rounded bg-gray-800 text-white border border-gray-700 focus:border-blue-500 focus:outline-none" step="0.1" min="0.1" max="50" />
-            </div>
+        <div className="mb-4">
+            <label htmlFor="slippage-input" className="block text-gray-400 text-sm mb-1">Slippage Tolerance (%)</label>
+            <input
+                id="slippage-input"
+                type="number"
+                value={slippage}
+                onChange={(e) => setSlippage(parseFloat(e.target.value) || 0)}
+                className="w-full p-2 rounded bg-gray-800 text-white border border-gray-700 focus:border-blue-500 focus:outline-none"
+                step="0.1"
+                min="0.1"
+                max="50"
+            />
+        </div>
 
-            {selectedPool && (<div className="p-3 mb-4 bg-blue-900/30 border border-blue-700/50 rounded-lg">
+        {selectedPool && (
+            <div className="p-3 mb-4 bg-blue-900/30 border border-blue-700/50 rounded-lg">
                 <div className="flex">
                     <div className="text-blue-500 mr-2 text-lg">ⓘ</div>
-                    <div className="text-blue-300 text-sm"><p>Trading against selected Raydium pool <span className="font-mono text-xs">{selectedPool.id.substring(0, 6)}...</span> on {network}.</p></div>
+                    <div className="text-blue-300 text-sm">
+                        <p>
+                            Trading against selected Raydium pool{" "}
+                            <span className="font-mono text-xs">{selectedPool.id.substring(0, 6)}...</span> on {network}.
+                        </p>
+                    </div>
                 </div>
-            </div>)}
-            {!selectedPool && (<div className="p-3 mb-4 bg-yellow-900/30 border border-yellow-700/50 rounded-lg">
-                <div className="flex">
-                    <div className="text-yellow-500 mr-2 text-lg">⚠️</div>
-                    <div className="text-yellow-300 text-sm"><p>No pool selected. Please select a pool from the list to enable trading.</p></div>
-                </div>
-            </div>)}
+            </div>
+        )}
 
-            {activeTab === 'buy' && (
-                <div className="space-y-4 flex-grow flex flex-col">
-                    <div>
-                        <label htmlFor="buy-amount-input" className="block text-gray-400 text-sm mb-1">SOL Amount to Spend</label>
-                        <input id="buy-amount-input" type="number" value={buyAmount} onChange={(e) => setBuyAmount(e.target.value)} className="w-full p-2 rounded bg-gray-800 text-white border border-gray-700 focus:border-blue-500 focus:outline-none" placeholder="Enter SOL amount" step="any" min="0" />
-                        <p className="text-gray-500 text-xs mt-1">Available: {solBalance?.toFixed(6) ?? '0.00'}</p>
-                    </div>
-                    <div className="bg-gray-800 p-3 rounded-lg space-y-2 text-sm">
-                        <div className="flex justify-between"><span className="text-gray-400">Min. Tokens Received:</span><span className="text-white">{(expectedBuyOutput * (1 - slippage / 100)).toLocaleString(undefined, { maximumFractionDigits: tokenDecimals ?? 2 })}</span></div>
-                        <div className="flex justify-between"><span className="text-gray-400">Price Impact:</span><span className={`font-medium ${buyPriceImpact > 5 ? 'text-red-400' : buyPriceImpact > 1 ? 'text-yellow-400' : 'text-green-400'}`}>{buyPriceImpact.toFixed(2)}%</span></div>
-                    </div>
-                    <button onClick={handleBuy} disabled={isLoading || !buyAmount || parseFloat(buyAmount) <= 0 || !wallet?.publicKey || !selectedPool} className={`w-full py-3 mt-auto rounded-lg font-bold transition-colors ${isLoading || !wallet?.publicKey || !selectedPool ? 'bg-gray-700 text-gray-500 cursor-not-allowed' : !buyAmount || parseFloat(buyAmount) <= 0 ? 'bg-green-800 text-gray-500 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700 text-white'}`}>{isLoading ? "Processing..." : "Buy Token"}</button>
+        {activeTab === 'buy' && (
+            <div className="space-y-4 flex-grow flex flex-col">
+                <div>
+                    <label htmlFor="buy-amount-input" className="block text-gray-400 text-sm mb-1">SOL Amount to Spend</label>
+                    <input
+                        id="buy-amount-input"
+                        type="number"
+                        value={buyAmount}
+                        onChange={(e) => setBuyAmount(e.target.value)}
+                        className="w-full p-2 rounded bg-gray-800 text-white border border-gray-700 focus:border-blue-500 focus:outline-none"
+                        placeholder="Enter SOL amount"
+                        step="any"
+                        min="0"
+                    />
+                    <p className="text-gray-500 text-xs mt-1">
+                        Available: {solBalance?.toFixed(6) ?? '0.00'}
+                    </p>
                 </div>
-            )}
+                <div className="bg-gray-800 p-3 rounded-lg space-y-2 text-sm">
+                    <div className="flex justify-between">
+                        <span className="text-gray-400">Min. Tokens Received:</span>
+                        <span className="text-white">
+                            {(expectedBuyOutput * (1 - slippage / 100)).toLocaleString(undefined, { maximumFractionDigits: tokenDecimals ?? 2 })}
+                        </span>
+                    </div>
+                    <div className="flex justify-between">
+                        <span className="text-gray-400">Price Impact:</span>
+                        <span className={`font-medium ${buyPriceImpact > 5 ? 'text-red-400' : buyPriceImpact > 1 ? 'text-yellow-400' : 'text-green-400'}`}>
+                            {buyPriceImpact.toFixed(2)}%
+                        </span>
+                    </div>
+                </div>
+                <button
+                    onClick={handleBuy}
+                    disabled={
+                        isLoading ||
+                        !buyAmount ||
+                        parseFloat(buyAmount) <= 0 ||
+                        !wallet?.publicKey
+                    }
+                    className={`w-full py-3 mt-auto rounded-lg font-bold transition-colors ${
+                        isLoading || !wallet?.publicKey
+                            ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
+                            : !buyAmount || parseFloat(buyAmount) <= 0
+                                ? 'bg-green-800 text-gray-500 cursor-not-allowed'
+                                : 'bg-green-600 hover:bg-green-700 text-white'
+                    }`}
+                >
+                    {isLoading ? "Processing..." : "Buy Token"}
+                </button>
+            </div>
+        )}
 
-            {activeTab === 'sell' && (
-                <div className="space-y-4 flex-grow flex flex-col">
-                    <div>
-                        <label htmlFor="sell-amount-input" className="block text-gray-400 text-sm mb-1">Token Amount to Sell</label>
-                        <input id="sell-amount-input" type="number" value={sellAmount} onChange={(e) => setSellAmount(e.target.value)} className="w-full p-2 rounded bg-gray-800 text-white border border-gray-700 focus:border-blue-500 focus:outline-none" placeholder="Enter token amount" step="any" min="0" />
-                        <p className="text-gray-500 text-xs mt-1">Available: {tokenBalance && typeof tokenDecimals === 'number' ? new Decimal(tokenBalance).div(10 ** tokenDecimals).toDP(tokenDecimals).toString() : '0'}</p>
-                    </div>
-                    <div className="bg-gray-800 p-3 rounded-lg space-y-2 text-sm">
-                        <div className="flex justify-between"><span className="text-gray-400">Min. SOL Received:</span><span className="text-white">{(expectedSellOutput * (1 - slippage / 100)).toFixed(6)}</span></div>
-                        <div className="flex justify-between"><span className="text-gray-400">Price Impact:</span><span className={`font-medium ${sellPriceImpact > 5 ? 'text-red-400' : sellPriceImpact > 1 ? 'text-yellow-400' : 'text-green-400'}`}>{sellPriceImpact.toFixed(2)}%</span></div>
-                    </div>
-                    <button onClick={handleSell} disabled={isLoading || !sellAmount || parseFloat(sellAmount) <= 0 || !wallet?.publicKey || !selectedPool} className={`w-full py-3 mt-auto rounded-lg font-bold transition-colors ${isLoading || !wallet?.publicKey || !selectedPool ? 'bg-gray-700 text-gray-500 cursor-not-allowed' : !sellAmount || parseFloat(sellAmount) <= 0 ? 'bg-red-800 text-gray-500 cursor-not-allowed' : 'bg-red-600 hover:bg-red-700 text-white'}`}>{isLoading ? "Processing..." : "Sell Token"}</button>
+        {activeTab === 'sell' && (
+            <div className="space-y-4 flex-grow flex flex-col">
+                <div>
+                    <label htmlFor="sell-amount-input" className="block text-gray-400 text-sm mb-1">Token Amount to Sell</label>
+                    <input
+                        id="sell-amount-input"
+                        type="number"
+                        value={sellAmount}
+                        onChange={(e) => setSellAmount(e.target.value)}
+                        className="w-full p-2 rounded bg-gray-800 text-white border border-gray-700 focus:border-blue-500 focus:outline-none"
+                        placeholder="Enter token amount"
+                        step="any"
+                        min="0"
+                    />
+                    <p className="text-gray-500 text-xs mt-1">
+                        Available: {tokenBalance && typeof tokenDecimals === 'number' ? new Decimal(tokenBalance).div(10 ** tokenDecimals).toDP(tokenDecimals).toString() : '0'}
+                    </p>
                 </div>
-            )}
-        </div>
-    );
+                <div className="bg-gray-800 p-3 rounded-lg space-y-2 text-sm">
+                    <div className="flex justify-between">
+                        <span className="text-gray-400">Min. SOL Received:</span>
+                        <span className="text-white">
+                            {(expectedSellOutput * (1 - slippage / 100)).toFixed(6)}
+                        </span>
+                    </div>
+                    <div className="flex justify-between">
+                        <span className="text-gray-400">Price Impact:</span>
+                        <span className={`font-medium ${sellPriceImpact > 5 ? 'text-red-400' : sellPriceImpact > 1 ? 'text-yellow-400' : 'text-green-400'}`}>
+                            {sellPriceImpact.toFixed(2)}%
+                        </span>
+                    </div>
+                </div>
+                <button
+                    onClick={handleSell}
+                    disabled={
+                        isLoading ||
+                        !sellAmount ||
+                        parseFloat(sellAmount) <= 0 ||
+                        !wallet?.publicKey
+                    }
+                    className={`w-full py-3 mt-auto rounded-lg font-bold transition-colors ${
+                        isLoading || !wallet?.publicKey
+                            ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
+                            : !sellAmount || parseFloat(sellAmount) <= 0
+                                ? 'bg-red-800 text-gray-500 cursor-not-allowed'
+                                : 'bg-red-600 hover:bg-red-700 text-white'
+                    }`}
+                >
+                    {isLoading ? "Processing..." : "Sell Token"}
+                </button>
+            </div>
+        )}
+    </div>
+);
 }
-
 export default TradingInterface;

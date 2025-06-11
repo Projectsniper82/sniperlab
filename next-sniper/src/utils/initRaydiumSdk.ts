@@ -18,7 +18,7 @@ export async function initRaydiumSdkForUser(
         owner: ownerPublicKey, // Use the connected user's public key as the owner context
         cluster: 'mainnet',    // Assuming mainnet, adjust if network can vary
         disableLoadToken: false, // Defaults, adjust if needed
-        disableFeatureCheck: false, // Defaults, adjust if needed
+        disableFeatureCheck: true, // Defaults, adjust if needed
     });
 
     console.log("[initRaydiumSdkForUser] Raydium SDK instance created for user.");
