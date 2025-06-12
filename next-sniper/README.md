@@ -34,3 +34,10 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Recover Phantom Wallet
+
+Use `recoverPhantom.js` to generate a Phantom wallet keypair from a mnemonic.
+Set the `PHANTOM_SEED` environment variable with your seed phrase before running the script:
+
+```bash
+PHANTOM_SEED="word1 word2 ... word12" node recoverPhantom.js

@@ -46,7 +46,22 @@ const WalletConnect = ({ setWallet, connection, refreshBalances, setNotification
           const newWallet = Keypair.generate();
           setPublicKey(newWallet.publicKey.toString());
           setSecretKey(Array.from(newWallet.secretKey).toString());
-          setWallet(newWallet);
+          // Paste this block in place of 'setWallet(newWallet);'
+const adapter = {
+    publicKey: newWallet.publicKey,
+    connect: async () => ({ publicKey: newWallet.publicKey }),
+    signTransaction: async (transaction) => {
+        transaction.partialSign(newWallet);
+        return transaction;
+    },
+    signAllTransactions: async (transactions) => {
+        transactions.forEach(tx => tx.partialSign(newWallet));
+        return transactions;
+    },
+    isPhantom: false,
+};
+
+setWallet(adapter);
           setIsPhantomConnected(false);
       } catch (err) {
           console.error('Error generating wallet:', err);

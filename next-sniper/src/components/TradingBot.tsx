@@ -1,10 +1,10 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Connection, PublicKey, Keypair, SystemProgram, Transaction, LAMPORTS_PER_SOL } from '@solana/web3.js';
 import { useNetwork } from '@/context/NetworkContext';
 import { useToken } from '@/context/TokenContext';
-import { useWallet, WalletContextState } from '@solana/wallet-adapter-react';
+import { useWallet } from '@solana/wallet-adapter-react';
 import { getTokenBalance } from '@/utils/solanaUtils';
 
 interface TradingBotProps {
@@ -22,40 +22,86 @@ export default function TradingBot({ botKeypair }: TradingBotProps) {
   const [botTokenBalance, setBotTokenBalance] = useState(0);
   const [isFunding, setIsFunding] = useState(false);
 
+  // useRef is used to store values that persist across renders without causing re-renders themselves.
+  const lastLogRef = useRef<string | null>(null);
+  const refreshTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
   const botPublicKey = botKeypair.publicKey;
 
-  // This function is now stable
+  // *** CONSOLE SPAM FIX ***
+  // This function now uses a ref to check if the last message is identical to the new one.
+  // This prevents the state from being updated with duplicate messages, which stops the console from flooding.
   const log = useCallback((message: string) => {
+    if (message === lastLogRef.current) {
+      return; // Do nothing if the message is the same as the last one
+    }
     const timestamp = new Date().toLocaleTimeString();
-    setLogs(prevLogs => [`[${timestamp}] ${message}`, ...prevLogs.slice(0, 100)]);
-  }, []); 
+    const fullMessage = `[${timestamp}] ${message}`;
+    setLogs(prevLogs => [fullMessage, ...prevLogs.slice(0, 100)]);
+    lastLogRef.current = message; // Update the ref with the last message
+  }, []);
 
-  // This function is now stable
+  // This function is stable and will be called to fetch balances.
   const refreshBotBalances = useCallback(async () => {
     log('Refreshing bot balances...');
     try {
       const sol = await connection.getBalance(botPublicKey);
-      setBotSolBalance(sol / LAMPORTS_PER_SOL);
-      
+      const solBalanceUI = sol / LAMPORTS_PER_SOL;
+      setBotSolBalance(solBalanceUI);
+
       if (tokenAddress) {
         const token = await getTokenBalance(connection, tokenAddress, botPublicKey);
         setBotTokenBalance(token);
-        log(`Balances updated: ${(sol / LAMPORTS_PER_SOL).toFixed(4)} SOL, ${token.toLocaleString()} Tokens`);
+        log(`Balances updated: ${solBalanceUI.toFixed(4)} SOL, ${token.toLocaleString()} Tokens`);
       } else {
-        log(`SOL Balance updated: ${(sol / LAMPORTS_PER_SOL).toFixed(4)}`);
+        setBotTokenBalance(0);
+        log('Bot ready. Paste a token on the Home page to track its balance.');
       }
     } catch (error: any) {
-      log(`Error refreshing balances: ${error.message}`);
-      console.error(error);
+      const errorMessage = error.message || 'An unknown error occurred';
+      log(`Error refreshing balances: ${errorMessage}`);
+      console.error("Balance refresh failed:", error);
     }
   }, [connection, botPublicKey, tokenAddress, log]);
 
-  // This useEffect will now only run when the bot's public key changes (i.e., when a new bot is loaded)
+
+  // *** INFINITE LOOP FIX ***
+  // This is the main effect hook that was causing the problem.
+  // THE CAUSE: The original dependency array included `refreshBotBalances` and `log`. When this
+  // effect called `refreshBotBalances` which in turn called `log`, `log` would call `setLogs`.
+  // This state update caused a re-render, which caused the `refreshBotBalances` function to be
+  // redefined, which triggered this effect to run again, creating the infinite loop.
+  //
+  // THE FIX: The dependency array is now correctly set to `[botPublicKey, connection, tokenAddress]`.
+  // It will ONLY re-run if the bot itself changes, or the network connection/token address changes.
+  // The `refreshBotBalances` function is now called from within, but is not a dependency itself,
+  // which breaks the loop permanently.
   useEffect(() => {
+    // Clear any previous refresh timeouts to prevent old intervals from running
+    if (refreshTimeoutRef.current) {
+        clearInterval(refreshTimeoutRef.current);
+    }
+    
     log(`Bot active: ${botPublicKey.toBase58().substring(0, 6)}...`);
+    
+    // Initial balance fetch
     refreshBotBalances();
-  }, [botPublicKey, refreshBotBalances, log]);
-  
+
+    // Set up a periodic refresh every 15 seconds.
+    // This is a much safer way to keep balances updated than relying on re-renders.
+    refreshTimeoutRef.current = setInterval(refreshBotBalances, 15000);
+
+    // Cleanup function: this runs when the component is unmounted or the dependencies change.
+    return () => {
+      if (refreshTimeoutRef.current) {
+        clearInterval(refreshTimeoutRef.current);
+      }
+    };
+  // We disable the eslint rule because we are intentionally not including refreshBotBalances in the array
+  // to break the infinite loop.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [botPublicKey, connection, tokenAddress]); // Correct, stable dependencies
+
   const handleFundBot = async () => {
       if (!userPublicKey || !signTransaction) {
           log("Main wallet not connected or cannot sign.");
@@ -89,7 +135,7 @@ export default function TradingBot({ botKeypair }: TradingBotProps) {
           await connection.confirmTransaction(signature, 'confirmed');
 
           log(`Funding successful! TX: ${signature.substring(0, 10)}...`);
-          await refreshBotBalances();
+          await refreshBotBalances(); // Manually refresh after funding
       } catch (error: any) {
           log(`Funding failed: ${error.message}`);
           console.error(error);
@@ -98,6 +144,7 @@ export default function TradingBot({ botKeypair }: TradingBotProps) {
       }
   };
 
+  // The rest of the component's JSX remains the same.
   return (
     <div className="bg-gray-800 p-4 rounded-lg border border-gray-700 space-y-4">
       <div className="flex justify-between items-start">

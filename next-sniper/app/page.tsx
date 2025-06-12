@@ -396,7 +396,8 @@ const loadIdRef = useRef(0);
         // ... (Keep this function exactly as it is in your provided code)
         console.log('[WALLET CONNECT] handleWalletConnected: Received phantomProvider object:');
         console.dir(phantomProvider);
-        if (!phantomProvider || typeof phantomProvider.connect !== 'function') {
+        // Paste this block in its place
+        if (!phantomProvider || !phantomProvider.publicKey) {
             setNotification({ show: true, message: 'Invalid wallet provider object.', type: 'error' }); return;
         }
         try {

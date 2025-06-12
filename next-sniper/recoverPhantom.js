@@ -4,7 +4,13 @@ const { derivePath } = require("ed25519-hd-key");
 const { Keypair } = require("@solana/web3.js");
 const fs = require("fs");
 
-const seedPhrase = "your twelve word phantom seed phrase here"; // 🔁 Replace this
+// Paste this block in its place
+const seedPhrase = process.env.PHANTOM_SEED;
+
+if (!seedPhrase) {
+  console.error("PHANTOM_SEED environment variable is not set");
+  process.exit(1);
+}
 
 const run = async () => {
   const seed = await bip39.mnemonicToSeed(seedPhrase);
