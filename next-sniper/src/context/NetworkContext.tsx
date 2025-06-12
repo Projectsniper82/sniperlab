@@ -1,4 +1,3 @@
-// src/context/NetworkContext.tsx
 'use client';
 
 import React, { createContext, useContext, useState, useMemo, ReactNode } from 'react';
@@ -24,8 +23,6 @@ export const NetworkProvider = ({ children }: { children: ReactNode }) => {
       : process.env.NEXT_PUBLIC_DEVNET_RPC_URL || clusterApiUrl('devnet');
   }, [network]);
 
-  // This useMemo is correct. The connection object is stable and only changes
-  // when the network or rpcUrl changes.
   const connection = useMemo(() => {
     console.log(`NetworkContext: Creating new connection for ${network} using RPC: ${rpcUrl}`);
     return new Connection(rpcUrl, 'confirmed');
