@@ -38,6 +38,13 @@
       }
     ]
   },
+  "ts-node": {
+    "compilerOptions": {
+      "module": "commonjs",
+      "moduleResolution": "node"
+    },
+    "transpileOnly": true
+  },
   "include": [
     "next-env.d.ts",
     "**/*.ts",

@@ -45,6 +45,7 @@ Decimal.set({ precision: 50 });
  * @param {() => Promise<void>} props.refreshBalances
  * @param {(amounts: { tokenAmount: any, solAmount: number }) => void} props.subtractBalances
  * @param {string} props.network - Current network ('devnet' or 'mainnet-beta')
+ * @param {() => void=} props.onSimPoolSeeded
  */
 function SimulatedLiquidityManager({
     wallet,
@@ -56,6 +57,7 @@ function SimulatedLiquidityManager({
     refreshBalances,
     subtractBalances,
     network, // Added network prop
+    onSimPoolSeeded,
 }) {
     const [solAmount, setSolAmount] = useState('');
     const [tokenPercentage, setTokenPercentage] = useState(90);
@@ -226,6 +228,7 @@ function SimulatedLiquidityManager({
                 console.log("[SimulatedLiquidityManager] Seeding Devnet pool info into simulatedPoolStore:", poolInfoForStore);
                 setSimulatedPool(poolInfoForStore);
                 setExistingPoolInfo(poolInfoForStore); // Also set local state for this component's UI (e.g., "Pool Active")
+                if (onSimPoolSeeded) onSimPoolSeeded();
 
             } catch (err) {
                 console.error("[SimulatedLiquidityManager] Error trying to seed Devnet pool for store:", err);

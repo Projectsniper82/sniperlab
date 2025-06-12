@@ -3,7 +3,8 @@
 // Polyfill must come first
 import '@/utils/bufferPolyfill';
 
-import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
+
 // Solana Web3 & SPL Token
 import { Connection, PublicKey, Transaction, VersionedTransaction } from '@solana/web3.js';
 import {
@@ -139,6 +140,7 @@ interface StrictPhantomWalletForMinting {
 
 export default function HomePage() {
     const { network, setNetwork, connection, rpcUrl } = useNetwork();
+const loadIdRef = useRef(0);
 
     const [wallet, setWallet] = useState<PhantomWallet | null>(null);
     const [tokenAddress, setTokenAddress] = useState('');
@@ -146,6 +148,11 @@ export default function HomePage() {
     const [solBalance, setSolBalance] = useState(0);
     const [tokenBalance, setTokenBalance] = useState('0');
     const [isLoading, setIsLoading] = useState(false);
+    const [simPoolRefresh, setSimPoolRefresh] = useState(0);
+
+    useEffect(() => {
+}, [isLoading]);
+
     const [errorMessage, setErrorMessage] = useState('');
     const [notification, setNotification] = useState<{
         show: boolean; message: string; type: NotificationType; id?: number;
@@ -426,6 +433,8 @@ export default function HomePage() {
             setTimeout(() => setNotification({ show: false, message: '', type: '' }), 4000);
         } finally {
             setIsLoading(false);
+          console.log("[HomePage][setIsLoading] set to FALSE (FUNCTION_NAME)");
+  
         }
     }, [connection, network, tokenAddress, fetchTokenBalance, setNotification, setIsLoading]);
 
@@ -446,6 +455,8 @@ export default function HomePage() {
         // ... (Keep this function exactly as is, it correctly uses selectedPool)
         if (!wallet?.publicKey) return;
         setIsLoading(true);
+        console.log("[HomePage][setIsLoading] set to TRUE (FUNCTION_NAME)");
+
         const notificationId = Date.now();
         setNotification({ id: notificationId, show: true, message: `Refreshing balances on ${network}...`, type: 'info' });
         try {
@@ -468,91 +479,66 @@ export default function HomePage() {
             setNotification({ id: notificationId, show: true, message: `Error refreshing: ${err.message}`, type: 'error' });
         } finally {
             setIsLoading(false);
+            console.log("[HomePage][setIsLoading] set to FALSE (FUNCTION_NAME)");
+
             setTimeout(() => setNotification(prev => (prev as any).id === notificationId ? { show: false, message: '', type: '' } : prev), 3000);
         }
     }, [wallet, connection, tokenAddress, tokenInfo, selectedPool, fetchTokenBalance, fetchLpTokenDetails, network, setIsLoading, setNotification]);
 
-    const loadTokenInfo = useCallback(async () => {
-        if (!tokenAddress) {
-            setTokenInfo(null);
-            setTokenBalance('0');
-            setErrorMessage('');
-            setLpTokenBalance('0');
-            setUserPairedSOL(0);
-            setUserPairedToken(0);
-            setTotalLpSupply('0');
-            setLpTokenDecimals(0);
-            setDiscoveredPools([]);
-            setSelectedPool(null);
-            return;
-        }
-
-        setIsLoading(true);
+// Replace your existing loadTokenInfo function with this one.
+const loadTokenInfo = useCallback(async () => {
+    if (!tokenAddress) {
         setTokenInfo(null);
         setTokenBalance('0');
         setErrorMessage('');
-        setLpTokenBalance('0');
-        setUserPairedSOL(0);
-        setUserPairedToken(0);
-        setTotalLpSupply('0');
-        setLpTokenDecimals(0);
         setDiscoveredPools([]);
         setSelectedPool(null);
+        return;
+    }
 
-        const notificationId = Date.now();
-        let msg = `Loading token ${tokenAddress.substring(0, 6)}...`;
-        setNotification({ id: notificationId, show: true, message: msg, type: 'info' });
+    // Reset state and turn loading ON
+    setIsLoading(true);
+    console.log("[HomePage][setIsLoading] set to TRUE (FUNCTION_NAME)");
 
-        try {
-            const mintPub = new PublicKey(tokenAddress);
-            let mintInfo;
-            // Try SPL-Token v1 first
-            try {
-                mintInfo = await getMint(connection, mintPub);
-            } catch (_err) {
-                // Fallback to Token-2022
-                mintInfo = await getMint(
-                    connection,
-                    mintPub,
-                    undefined,
-                    TOKEN_2022_PROGRAM_ID
-                );
-            }
+    setTokenInfo(null);
+    setTokenBalance('0');
+    setErrorMessage('');
+    setSelectedPool(null);
+    setNotification({ show: true, message: `Loading token ${tokenAddress.substring(0, 6)}...`, type: 'info' });
 
-            const ti: TokenInfoState = {
-                address: tokenAddress,
-                decimals: mintInfo.decimals,
-                supply: mintInfo.supply.toString(),
-                isInitialized: true,
-            };
-            setTokenInfo(ti);
+    try {
+        const mintPub = new PublicKey(tokenAddress);
+        const mintInfo = await getMint(connection, mintPub);
 
-            msg = 'Token info loaded.';
-            setNotification({ id: notificationId, show: true, message: msg, type: 'success' });
+        const ti: TokenInfoState = {
+            address: tokenAddress,
+            decimals: mintInfo.decimals,
+            supply: mintInfo.supply.toString(),
+            isInitialized: true,
+        };
+        setTokenInfo(ti);
+        setNotification({ show: true, message: 'Token info loaded!', type: 'success' });
 
-            if (wallet?.publicKey) {
-                const ownerPk = wallet.publicKey instanceof PublicKey
-                    ? wallet.publicKey
-                    : new PublicKey(wallet.publicKey.toString());
-                await fetchTokenBalance(ownerPk, mintPub);
-            }
-        } catch (err: any) {
-            msg = `Error loading token: ${err.message}`;
-            setErrorMessage(msg);
-            setNotification({ id: notificationId, show: true, message: msg, type: 'error' });
-            setTokenInfo(null);
-            setTokenBalance('0');
-        } finally {
-            setIsLoading(false);
-            setTimeout(() => {
-                setNotification(prev =>
-                    prev.id === notificationId
-                        ? { show: false, message: '', type: '' }
-                        : prev
-                );
-            }, 3000);
+        if (wallet?.publicKey) {
+            const ownerPk = wallet.publicKey instanceof PublicKey
+                ? wallet.publicKey
+                : new PublicKey(wallet.publicKey.toString());
+            await fetchTokenBalance(ownerPk, mintPub);
         }
-    }, [tokenAddress, connection, wallet, fetchTokenBalance, network, setNotification, setIsLoading, setErrorMessage]);
+    } catch (err: any) {
+        const msg = `Error loading token: ${err.message}`;
+        setErrorMessage(msg);
+        setNotification({ show: true, message: msg, type: 'error' });
+        setTokenInfo(null);
+        setTokenBalance('0');
+    } finally {
+        // This GUARANTEES the loading spinner is turned off,
+        // no matter if loading the token succeeded or failed.
+        setIsLoading(false);
+        console.log("[HomePage][setIsLoading] set to FALSE (FUNCTION_NAME)");
+
+    }
+}, [tokenAddress, connection, wallet, fetchTokenBalance, setNotification, setIsLoading, setErrorMessage]);
 
 
     const handleFetchAndDisplayPools = useCallback(async (addressToFetch: string) => {
@@ -600,25 +586,54 @@ export default function HomePage() {
         }
     }, [wallet, connection, network, setNotification, setErrorMessage]);
 
-    useEffect(() => {
-        const handler = setTimeout(async () => {
-            if (tokenAddress) {
-                try { new PublicKey(tokenAddress); await loadTokenInfo(); } catch (e) {
-                    setErrorMessage('Invalid token address format.');
-                    setTokenInfo(null); setTokenBalance('0'); setLpTokenBalance('0'); setUserPairedSOL(0); setUserPairedToken(0); setTotalLpSupply('0'); setLpTokenDecimals(0);
-                    setDiscoveredPools([]); setSelectedPool(null);
-                }
-            } else {
-                setTokenInfo(null); setTokenBalance('0'); setErrorMessage('');
-                setLpTokenBalance('0'); setUserPairedSOL(0); setUserPairedToken(0); setTotalLpSupply('0'); setLpTokenDecimals(0);
-                setDiscoveredPools([]); setSelectedPool(null);
+useEffect(() => {
+    loadIdRef.current += 1; // bump a "version" for every change
+    const currentLoadId = loadIdRef.current;
+
+    setIsLoading(true);
+
+    const handler = setTimeout(async () => {
+        if (!tokenAddress) {
+            if (loadIdRef.current === currentLoadId) {
+                setTokenInfo(null);
+                setTokenBalance('0');
+                setErrorMessage('');
+                setLpTokenBalance('0');
+                setUserPairedSOL(0);
+                setUserPairedToken(0);
+                setTotalLpSupply('0');
+                setLpTokenDecimals(0);
+                setDiscoveredPools([]);
+                setSelectedPool(null);
+                setIsLoading(false);
             }
-        }, 600);
-        return () => clearTimeout(handler);
-    }, [tokenAddress, loadTokenInfo]); // Removed network, loadTokenInfo handles its dependencies
+            return;
+        }
+        try {
+            new PublicKey(tokenAddress);
+            await loadTokenInfo();
+        } catch (e) {
+            if (loadIdRef.current === currentLoadId) {
+                setErrorMessage('Invalid token address format.');
+                setTokenInfo(null);
+                setTokenBalance('0');
+                setLpTokenBalance('0');
+                setUserPairedSOL(0);
+                setUserPairedToken(0);
+                setTotalLpSupply('0');
+                setLpTokenDecimals(0);
+                setDiscoveredPools([]);
+                setSelectedPool(null);
+            }
+        } finally {
+            // Only the most recent invocation should clear loading!
+            if (loadIdRef.current === currentLoadId) setIsLoading(false);
+        }
+    }, 600);
 
+    return () => clearTimeout(handler);
+}, [tokenAddress, loadTokenInfo]);
 
-// *** THIS IS THE PRIMARY useEffect FOR MANAGING selectedPool BASED ON NETWORK ***
  useEffect(() => {
         const walletPublicKeyString = wallet?.publicKey?.toString();
         const simPoolFromStore = getSimulatedPool();
@@ -676,6 +691,7 @@ export default function HomePage() {
         tokenInfo,
         wallet?.publicKey?.toString(),
         connection,
+        simPoolRefresh,
         // THIS IS THE CRUCIAL PART THAT WAS MISSING TO DETECT DEVNET POOL CHANGES
         JSON.stringify(getSimulatedPool())
     ]);
@@ -732,6 +748,8 @@ export default function HomePage() {
         setWallet(null); setTokenAddress(''); setTokenInfo(null); setSolBalance(0); setTokenBalance('0');
         setLpTokenBalance('0'); setUserPairedSOL(0); setUserPairedToken(0); setTotalLpSupply('0'); setLpTokenDecimals(0);
         setErrorMessage(''); setIsLoading(false);
+        console.log("[HomePage][setIsLoading] set to FALSE (FUNCTION_NAME)");
+
         setDiscoveredPools([]);
         setSelectedPool(null);
         setIsPoolListCollapsed(true);
@@ -858,6 +876,8 @@ export default function HomePage() {
                             };
                             console.log('[MINT FIX] walletForMintingAdapter created.');
                             setIsLoading(true);
+                            console.log("[HomePage][setIsLoading] set to TRUE (FUNCTION_NAME)");
+
                             setNotification({ show: true, message: `Minting TestToken...`, type: 'info' });
                             try {
                                 const result = await mintTokenWithPhantomWallet(walletForMintingAdapter, connection, 'TestToken');
@@ -871,6 +891,8 @@ export default function HomePage() {
                                 setTimeout(() => setNotification({ show: false, message: '', type: '' }), 4000);
                             } finally {
                                 setIsLoading(false);
+                                console.log("[HomePage][setIsLoading] set to FALSE (FUNCTION_NAME)");
+
                                 setTimeout(() => setNotification(prev => prev.message.includes("Minting TestToken") || prev.message.includes("Token minted!") ? { show: false, message: '', type: '' } : prev), 4000);
                             }
                         }}
@@ -1019,24 +1041,27 @@ export default function HomePage() {
                         refreshBalances={refreshBalances}
                         subtractBalances={subtractBalances}
                         network={network} // *** Pass network prop ***
+                        onSimPoolSeeded={() => setSimPoolRefresh(v => v + 1)}
                     />
-                    <TradingInterface
-                        wallet={wallet}
-                        connection={connection}
-                        tokenAddress={tokenAddress}
-                        tokenDecimals={tokenInfo.decimals}
-                        tokenBalance={tokenBalance}
-                        solBalance={solBalance}
-                        refreshBalances={refreshBalances}
-                        subtractBalances={subtractBalances}
-                        setNotification={setNotification}
-                        network={network}
-                        selectedPool={selectedPool}
-                        // New props for Jupiter
-                        priceInSol={priceInfo.price}
-                        isPriceLoading={priceInfo.loading}
-                        isPoolSelected={network === 'mainnet-beta' ? (priceInfo.price !== null && priceInfo.price > 0) : !!(selectedPool && selectedPool.id)}
-                    />
+             <TradingInterface
+    wallet={wallet}
+    connection={connection}
+    tokenAddress={tokenAddress}
+    tokenDecimals={tokenInfo.decimals}
+    tokenBalance={tokenBalance}
+    solBalance={solBalance}
+    refreshBalances={refreshBalances}
+    subtractBalances={subtractBalances}
+    setNotification={setNotification}
+    network={network}
+    selectedPool={selectedPool}
+    priceInSol={priceInfo.price}
+    isPriceLoading={priceInfo.loading}
+    isPoolSelected={network === "mainnet-beta" ? (priceInfo.price !== null && priceInfo.price > 0) : !!(selectedPool && selectedPool.id)}
+    isLoading={isLoading}
+    setIsLoading={setIsLoading}
+/>
+
                 </div>
             ) : (
                 <div className="mt-10 text-center text-gray-400">

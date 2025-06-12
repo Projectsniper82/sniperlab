@@ -17,6 +17,7 @@ import { isRaydiumPool, swapRaydiumTokens } from '@/utils/raydiumSdkAdapter'; //
 import { DiscoveredPoolDetailed } from '@/utils/poolFinder';
 import { NetworkType, useNetwork } from '@/context/NetworkContext'; // Assuming useNetwork is correctly imported
 import { executeJupiterSwap } from '@/utils/jupiterSwapUtil';
+import { getOptimalPriorityFee } from '@/utils/priorityFee';
 // ... rest of your TradingInterfaceProps and component
 
 type NotificationType = 'success' | 'error' | 'info' | '';
@@ -37,6 +38,9 @@ interface TradingInterfaceProps {
     // New props for Jupiter
     priceInSol: number | null;
     isPriceLoading: boolean;
+    isLoading: boolean;
+    setIsLoading: React.Dispatch<React.SetStateAction<boolean>>;
+
 }
 
 Decimal.set({ precision: 50 });
@@ -54,7 +58,17 @@ function TradingInterface({
     setNotification,
     network,
     isPoolSelected,
+    priceInSol,
+    isPriceLoading,
+    isLoading,
+    setIsLoading,
 }: TradingInterfaceProps) {
+    useEffect(() => {
+        console.log("[TradingInterface][PROP isLoading] CHANGED TO:", isLoading);
+        console.log("[DEBUG][TradingInterface] wallet:", wallet);
+        console.log("[DEBUG][TradingInterface] selectedPool:", selectedPool);
+        console.log("[DEBUG][TradingInterface] isPoolSelected:", isPoolSelected);
+    }, [isLoading]);
     const [buyAmount, setBuyAmount] = useState<string>('');
     const [sellAmount, setSellAmount] = useState<string>('');
     const [expectedBuyOutput, setExpectedBuyOutput] = useState<number>(0);
@@ -64,9 +78,8 @@ function TradingInterface({
     const [slippage, setSlippage] = useState<number>(1);
     const [currentPrice, setCurrentPrice] = useState<number>(0);
     const [activeTab, setActiveTab] = useState<'buy' | 'sell'>('buy');
-    const [isLoading, setIsLoading] = useState<boolean>(false);
     const [errorMessage, setErrorMessage] = useState<string>('');
-
+    const [jupiterQuote, setJupiterQuote] = useState<any>(null);
     const poolDataForCalculations = useMemo(() => {
         console.log('[MEMO_DEBUG] Recomputing poolDataForCalculations. SelectedPool ID:', selectedPool?.id, 'Price:', selectedPool?.price);
         if (selectedPool && typeof selectedPool.price === 'number' && !isNaN(selectedPool.price)) {
@@ -154,110 +167,69 @@ function TradingInterface({
         }
     }, [poolDataForCalculations]);
 
+    // PASTE THIS NEW CODE IN ITS PLACE
     useEffect(() => {
-        console.log('[EFFECT_CALC] Running calculation useEffect. buyAmount:', buyAmount, 'sellAmount:', sellAmount, 'currentPrice:', currentPrice);
-        const poolToUse = poolDataForCalculations;
-
-        if (!poolToUse || typeof poolToUse.price !== 'number' || poolToUse.price <= 0 ||
-            typeof poolToUse.solAmount !== 'number' || poolToUse.solAmount < 0 ||
-            typeof poolToUse.tokenAmount !== 'number' || poolToUse.tokenAmount < 0 ) {
-            console.log('[EFFECT_CALC] Invalid poolToUse data or price <= 0. Setting outputs to 0 and impact to 100.');
-            setExpectedBuyOutput(0); setBuyPriceImpact(100);
-            setExpectedSellOutput(0); setSellPriceImpact(100);
+        // This effect handles fetching quotes from Jupiter for Mainnet
+        if (network !== 'mainnet-beta') {
+            // For devnet, we clear any jupiter quotes and rely on the old logic.
+            if (jupiterQuote) setJupiterQuote(null);
             return;
         }
 
-        const buyAmountFloat = parseFloat(buyAmount);
-        if (!isNaN(buyAmountFloat) && buyAmountFloat > 0) {
-            const inputSOL = buyAmountFloat;
-            console.log(`[EFFECT_CALC_BUY] Input SOL: ${inputSOL}, Pool SOL: ${poolToUse.solAmount}, Pool Token: ${poolToUse.tokenAmount}, Pool Price (likely T/S): ${poolToUse.price}`);
+        // Determine which amount to use for the quote
+        const amountToQuote = activeTab === 'buy' ? buyAmount : sellAmount;
+        const amountFloat = parseFloat(amountToQuote);
 
-            if (poolToUse.solAmount > 0 && poolToUse.tokenAmount > 0) {
-                const k = new Decimal(poolToUse.solAmount).mul(poolToUse.tokenAmount);
-                const newSolReserve = new Decimal(poolToUse.solAmount).plus(inputSOL);
-                
-                if (newSolReserve.isZero()) {
-                     setExpectedBuyOutput(0); setBuyPriceImpact(100);
-                } else {
-                    const newTokenReserve = k.div(newSolReserve);
-                    const estimatedOutputTokens = new Decimal(poolToUse.tokenAmount).minus(newTokenReserve).toNumber();
-                    console.log(`[EFFECT_CALC_BUY] k=${k.toString()}, newSolRes=${newSolReserve.toString()}, newTokenRes=${newTokenReserve.toString()}, estOutputTokens=${estimatedOutputTokens}`);
-
-                    if (estimatedOutputTokens > 0) {
-                        const marketPrice_TokenPerSol = new Decimal(poolToUse.tokenAmount).div(poolToUse.solAmount); // Assuming pool amounts are correct
-                        const executionPrice_TokenPerSol = new Decimal(estimatedOutputTokens).div(inputSOL);
-                        let impactRatio = new Decimal(0);
-                        if (marketPrice_TokenPerSol.gt(0)) {
-                           impactRatio = marketPrice_TokenPerSol.minus(executionPrice_TokenPerSol).abs().div(marketPrice_TokenPerSol);
-                        }
-                        
-                        setExpectedBuyOutput(estimatedOutputTokens);
-                        setBuyPriceImpact(isFinite(impactRatio.toNumber()) ? impactRatio.mul(100).toNumber() : 0);
-                        console.log(`[EFFECT_CALC_BUY] Market(T/S)=${marketPrice_TokenPerSol.toString()}, Exec(T/S)=${executionPrice_TokenPerSol.toString()}, Impact=${impactRatio.mul(100).toFixed(2)}%`);
-                    } else {
-                        console.log('[EFFECT_CALC_BUY] estOutputTokens <= 0. Impact 100%.');
-                        setExpectedBuyOutput(0); setBuyPriceImpact(100);
-                    }
-                }
-            } else {
-                 console.log('[EFFECT_CALC_BUY] Fallback: Zero reserves. Using direct price.');
-                 if (poolToUse.price > 0 && typeof poolToUse.price === 'number') {
-                    // Assuming selectedPool.price is Token/SOL
-                    setExpectedBuyOutput(inputSOL * poolToUse.price); 
-                 } else {
-                    setExpectedBuyOutput(0);
-                 }
-                setBuyPriceImpact(0); 
-            }
-        } else {
-            setExpectedBuyOutput(0); setBuyPriceImpact(0);
+        // If amount is invalid, clear the quote and stop.
+        if (isNaN(amountFloat) || amountFloat <= 0) {
+            setJupiterQuote(null);
+            return;
         }
 
-        const sellAmountFloat = parseFloat(sellAmount);
-        if (!isNaN(sellAmountFloat) && sellAmountFloat > 0) {
-            const inputTokens = sellAmountFloat;
-             console.log(`[EFFECT_CALC_SELL] Input Tokens: ${inputTokens}, Pool SOL: ${poolToUse.solAmount}, Pool Token: ${poolToUse.tokenAmount}, Pool Price (T/S): ${poolToUse.price}`);
+        // This is a "debounce" timer. It waits until you stop typing for 300ms before fetching.
+        const handler = setTimeout(async () => {
+            try {
+                setIsLoading(true); // Show a subtle loading state
+               console.log("[TradingInterface][setIsLoading] set to TRUE (jupiter quote fetch)");
+                const inputMint = activeTab === 'buy' ? NATIVE_MINT : new PublicKey(tokenAddress);
+                const outputMint = activeTab === 'buy' ? new PublicKey(tokenAddress) : NATIVE_MINT;
 
-            if (poolToUse.solAmount > 0 && poolToUse.tokenAmount > 0) {
-                const k = new Decimal(poolToUse.solAmount).mul(poolToUse.tokenAmount);
-                const newTokenReserve = new Decimal(poolToUse.tokenAmount).plus(inputTokens);
-                
-                if (newTokenReserve.isZero()) {
-                    setExpectedSellOutput(0); setSellPriceImpact(100);
-                } else {
-                    const newSolReserve = k.div(newTokenReserve);
-                    const estimatedOutputSOL = new Decimal(poolToUse.solAmount).minus(newSolReserve).toNumber();
-                    console.log(`[EFFECT_CALC_SELL] k=${k.toString()}, newTokenRes=${newTokenReserve.toString()}, newSolRes=${newSolReserve.toString()}, estOutputSOL=${estimatedOutputSOL}`);
+                // Convert the UI amount to the correct lamports/raw amount
+                const amountInSmallestUnit = new BN(
+                    new Decimal(amountFloat).mul(
+                        new Decimal(10).pow(activeTab === 'buy' ? 9 : tokenDecimals)
+                    ).toFixed(0)
+                );
 
-                    if (estimatedOutputSOL > 0) {
-                        const marketPrice_TokenPerSol = new Decimal(poolToUse.tokenAmount).div(poolToUse.solAmount);
-                        const executionPrice_TokenPerSol = new Decimal(inputTokens).div(estimatedOutputSOL);
-                        let impactRatio = new Decimal(0);
-                        if (marketPrice_TokenPerSol.gt(0)) {
-                            impactRatio = executionPrice_TokenPerSol.minus(marketPrice_TokenPerSol).abs().div(marketPrice_TokenPerSol);
-                        }
-                        setExpectedSellOutput(estimatedOutputSOL);
-                        setSellPriceImpact(isFinite(impactRatio.toNumber()) ? impactRatio.mul(100).toNumber() : 0);
-                         console.log(`[EFFECT_CALC_SELL] Market(T/S)=${marketPrice_TokenPerSol.toString()}, Exec(T/S)=${executionPrice_TokenPerSol.toString()}, Impact=${impactRatio.mul(100).toFixed(2)}%`);
-                    } else {
-                         console.log('[EFFECT_CALC_SELL] estOutputSOL <= 0. Impact 100%.');
-                        setExpectedSellOutput(0); setSellPriceImpact(100);
-                    }
-                }
-            } else {
-                console.log('[EFFECT_CALC_SELL] Fallback: Zero reserves. Using direct price.');
-                if (poolToUse.price > 0 && typeof poolToUse.price === 'number') { // Assuming poolToUse.price is Token/SOL
-                    setExpectedSellOutput(inputTokens / poolToUse.price);
-                } else {
-                    setExpectedSellOutput(0);
-                }
-                setSellPriceImpact(0);
+                // Fetch the quote from your utility function
+                const quote = await executeJupiterSwap({
+                    wallet,
+                    connection,
+                    inputMint,
+                    outputMint,
+                    amount: amountInSmallestUnit,
+                    slippageBps: slippage * 100,
+                    onlyGetQuote: true
+                });
+
+                console.log("Received Jupiter Quote:", quote);
+                setJupiterQuote(quote); // Store the entire quote object
+
+            } catch (error) {
+                console.error("Failed to get Jupiter quote:", error);
+                setJupiterQuote(null);
+            } finally {
+                setIsLoading(false);
+                console.log("[TradingInterface][setIsLoading] set to FALSE (jupiter quote fetch)");
             }
-        } else {
-            setExpectedSellOutput(0); setSellPriceImpact(0);
-        }
+        }, 300); // 300ms delay
 
-    }, [buyAmount, sellAmount, currentPrice, poolDataForCalculations]);
+        // This cleans up the timer if you type again before it finishes.
+        return () => {
+            clearTimeout(handler);
+        };
+
+    }, [buyAmount, sellAmount, activeTab, network, tokenAddress, tokenDecimals, slippage, connection, wallet]);
 
     useEffect(() => {
         if (poolDataForCalculations && typeof poolDataForCalculations.price === 'number') {
@@ -271,28 +243,27 @@ const handleBuy = async () => {
         setErrorMessage("Wallet not connected or no valid pool/route selected.");
         return;
     }
-
     const buyAmountSOLFloat = parseFloat(buyAmount);
     if (isNaN(buyAmountSOLFloat) || buyAmountSOLFloat <= 0) {
         setErrorMessage("Please enter a valid SOL amount to buy");
         return;
     }
-
     if (buyAmountSOLFloat > solBalance) {
         setErrorMessage("Not enough SOL balance");
         return;
     }
 
     setIsLoading(true);
+    console.log("[TradingInterface][setIsLoading] set to TRUE (handleBuy)");
     setErrorMessage('');
     setNotification({ show: true, message: `Processing buy on ${network}...`, type: 'info' });
 
     try {
         let txSignature: string;
         const amountInLamports = new BN(new Decimal(buyAmountSOLFloat).mul(1e9).toFixed(0));
-        const slippageDecimal = slippage / 100;
 
         if (network === 'mainnet-beta') {
+            const priorityFee = await getOptimalPriorityFee(connection);
             txSignature = await executeJupiterSwap({
                 wallet,
                 connection,
@@ -300,22 +271,27 @@ const handleBuy = async () => {
                 outputMint: new PublicKey(tokenAddress),
                 amount: amountInLamports,
                 slippageBps: slippage * 100,
+                priorityFeeMicroLamports: priorityFee,
+                asLegacyTransaction: true,
             });
-        } else { // Devnet Logic is preserved
+        } else { // Devnet Logic
             if (!selectedPool || !selectedPool.id) throw new Error("Devnet pool not selected.");
+            const slippageDecimal = slippage / 100;
             txSignature = await swapRaydiumTokens(wallet, connection, selectedPool.id, NATIVE_MINT.toBase58(), amountInLamports, slippageDecimal);
             updateSimulatedPoolAfterTrade(tokenAddress, { solIn: buyAmountSOLFloat });
         }
         
         setNotification({ show: true, message: `Buy successful!`, type: 'success' });
-        await refreshBalances();
         setBuyAmount('');
+        await refreshBalances();
+
     } catch (error: any) {
-        console.error(`[handleBuy] Error on ${network}:`, error);
+        console.error(`[handleBuy] Error:`, error);
         setErrorMessage(`Buy Failed: ${error.message}`);
         setNotification({ show: true, message: `Buy Failed: ${error.message.substring(0, 100)}`, type: 'error' });
     } finally {
         setIsLoading(false);
+        console.log("[TradingInterface][setIsLoading] set to FALSE (handleBuy)");
     }
 };
 
@@ -329,7 +305,6 @@ const handleSell = async () => {
         setErrorMessage("Please enter a valid token amount to sell");
         return;
     }
-
     const rawTokenBalanceBN = new BN(tokenBalance);
     const rawTokensToSell = new BN(new Decimal(sellAmountTokensFloat).mul(10 ** tokenDecimals).toFixed(0));
     if (rawTokensToSell.gt(rawTokenBalanceBN)) {
@@ -338,14 +313,15 @@ const handleSell = async () => {
     }
 
     setIsLoading(true);
+    console.log("[TradingInterface][setIsLoading] set to TRUE (handleSell)");
     setErrorMessage('');
     setNotification({ show: true, message: `Processing sell on ${network}...`, type: 'info' });
 
     try {
         let txSignature: string;
-        const slippageDecimal = slippage / 100;
 
         if (network === 'mainnet-beta') {
+            const priorityFee = await getOptimalPriorityFee(connection);
             txSignature = await executeJupiterSwap({
                 wallet,
                 connection,
@@ -353,73 +329,79 @@ const handleSell = async () => {
                 outputMint: NATIVE_MINT,
                 amount: rawTokensToSell,
                 slippageBps: slippage * 100,
+                priorityFeeMicroLamports: priorityFee,
+                asLegacyTransaction: true,
             });
-        } else { // Devnet Logic is preserved
+        } else { // Devnet Logic
             if (!selectedPool || !selectedPool.id) throw new Error("Devnet pool not selected.");
+            const slippageDecimal = slippage / 100;
             txSignature = await swapRaydiumTokens(wallet, connection, selectedPool.id, tokenAddress, rawTokensToSell, slippageDecimal);
             updateSimulatedPoolAfterTrade(tokenAddress, { tokenIn: sellAmountTokensFloat });
         }
         
         setNotification({ show: true, message: 'Sell successful!', type: 'success' });
-        await refreshBalances();
         setSellAmount('');
+        await refreshBalances();
+
     } catch (error: any) {
-        console.error(`[handleSell] Error on ${network}:`, error);
+        console.error(`[handleSell] Error:`, error);
         setErrorMessage(`Sell Error: ${error.message}`);
         setNotification({ show: true, message: `Sell Failed: ${error.message.substring(0, 100)}`, type: 'error' });
     } finally {
         setIsLoading(false);
+        console.log("[TradingInterface][setIsLoading] set to FALSE (handleSell)");
     }
 };
-let priceToDisplay = currentPrice;
-const displayPriceString = typeof priceToDisplay === 'number' && priceToDisplay > 0
-    ? priceToDisplay.toFixed(Math.max(9, -Math.floor(Math.log10(priceToDisplay)) + 4))
-    : 'N/A';
 
-return (
-    <div className="bg-gray-900 p-4 sm:p-6 rounded-lg shadow-lg border border-gray-800 h-full flex flex-col">
-        <h2 className="text-xl font-bold mb-4 text-white">Raydium Trading</h2>
-        <div className="flex mb-4 bg-gray-800 rounded-lg p-1">
-            <button
-                className={`flex-1 py-2 px-4 rounded-lg transition-colors ${activeTab === 'buy' ? 'bg-green-600 text-white' : 'text-gray-400 hover:text-gray-200'}`}
-                onClick={() => setActiveTab('buy')}
-            >Buy Token</button>
-            <button
-                className={`flex-1 py-2 px-4 rounded-lg transition-colors ${activeTab === 'sell' ? 'bg-red-600 text-white' : 'text-gray-400 hover:text-gray-200'}`}
-                onClick={() => setActiveTab('sell')}
-            >Sell Token</button>
-        </div>
+    let priceToDisplay = network === 'mainnet-beta' ? priceInSol : currentPrice;
+    const displayPriceString = typeof priceToDisplay === 'number' && priceToDisplay > 0
+        ? priceToDisplay.toFixed(Math.max(9, -Math.floor(Math.log10(priceToDisplay)) + 4))
+        : 'N/A';
 
-        {errorMessage && (
-            <div className="mb-4 p-3 bg-red-900/50 border border-red-700 rounded text-red-300 text-sm break-words">
-                {errorMessage}
+    return (
+        <div className="bg-gray-900 p-4 sm:p-6 rounded-lg shadow-lg border border-gray-800 h-full flex flex-col">
+            <h2 className="text-xl font-bold mb-4 text-white">Raydium Trading</h2>
+            <div className="flex mb-4 bg-gray-800 rounded-lg p-1">
+                <button
+                    className={`flex-1 py-2 px-4 rounded-lg transition-colors ${activeTab === 'buy' ? 'bg-green-600 text-white' : 'text-gray-400 hover:text-gray-200'}`}
+                    onClick={() => setActiveTab('buy')}
+                >Buy Token</button>
+                <button
+                    className={`flex-1 py-2 px-4 rounded-lg transition-colors ${activeTab === 'sell' ? 'bg-red-600 text-white' : 'text-gray-400 hover:text-gray-200'}`}
+                    onClick={() => setActiveTab('sell')}
+                >Sell Token</button>
             </div>
-        )}
 
-        <div className="mb-4 bg-gray-800 p-3 rounded-lg">
-            <div className="flex justify-between items-center">
-                <span className="text-gray-400 text-sm">
-                    {selectedPool ? `Pool (${selectedPool.id.substring(0, 6)}...) Price:` : "Price:"}
-                </span>
-                <span className="text-white font-semibold text-lg">
-                    {displayPriceString} <span className="text-xs text-gray-500"> SOL/Token</span>
-                </span>
+            {errorMessage && (
+                <div className="mb-4 p-3 bg-red-900/50 border border-red-700 rounded text-red-300 text-sm break-words">
+                    {errorMessage}
+                </div>
+            )}
+
+            <div className="mb-4 bg-gray-800 p-3 rounded-lg">
+                <div className="flex justify-between items-center">
+                    <span className="text-gray-400 text-sm">
+                        {selectedPool ? `Pool (${selectedPool.id.substring(0, 6)}...) Price:` : "Price:"}
+                    </span>
+                    <span className="text-white font-semibold text-lg">
+                        {displayPriceString} <span className="text-xs text-gray-500"> SOL/Token</span>
+                    </span>
+                </div>
             </div>
-        </div>
 
-        <div className="mb-4">
-            <label htmlFor="slippage-input" className="block text-gray-400 text-sm mb-1">Slippage Tolerance (%)</label>
-            <input
-                id="slippage-input"
-                type="number"
-                value={slippage}
-                onChange={(e) => setSlippage(parseFloat(e.target.value) || 0)}
-                className="w-full p-2 rounded bg-gray-800 text-white border border-gray-700 focus:border-blue-500 focus:outline-none"
-                step="0.1"
-                min="0.1"
-                max="50"
-            />
-        </div>
+            <div className="mb-4">
+                <label htmlFor="slippage-input" className="block text-gray-400 text-sm mb-1">Slippage Tolerance (%)</label>
+                <input
+                    id="slippage-input"
+                    type="number"
+                    value={slippage}
+                    onChange={(e) => setSlippage(parseFloat(e.target.value) || 0)}
+                    className="w-full p-2 rounded bg-gray-800 text-white border border-gray-700 focus:border-blue-500 focus:outline-none"
+                    step="0.1"
+                    min="0.1"
+                    max="50"
+                />
+            </div>
 
         {selectedPool && (
             <div className="p-3 mb-4 bg-blue-900/30 border border-blue-700/50 rounded-lg">
@@ -455,37 +437,37 @@ return (
                 </div>
                 <div className="bg-gray-800 p-3 rounded-lg space-y-2 text-sm">
                     <div className="flex justify-between">
-                        <span className="text-gray-400">Min. Tokens Received:</span>
+                        <span className="text-gray-400">Tokens Received:</span>
                         <span className="text-white">
-                            {(expectedBuyOutput * (1 - slippage / 100)).toLocaleString(undefined, { maximumFractionDigits: tokenDecimals ?? 2 })}
+                            {jupiterQuote ? new Decimal(jupiterQuote.outAmount).div(10 ** tokenDecimals).toFixed(6) : '0.00'}
                         </span>
                     </div>
                     <div className="flex justify-between">
                         <span className="text-gray-400">Price Impact:</span>
-                        <span className={`font-medium ${buyPriceImpact > 5 ? 'text-red-400' : buyPriceImpact > 1 ? 'text-yellow-400' : 'text-green-400'}`}>
-                            {buyPriceImpact.toFixed(2)}%
+                        <span className={`font-medium ${jupiterQuote && jupiterQuote.priceImpactPct * 100 > 5 ? 'text-red-400' : jupiterQuote && jupiterQuote.priceImpactPct * 100 > 1 ? 'text-yellow-400' : 'text-green-400'}`}>
+                            {jupiterQuote ? `${(jupiterQuote.priceImpactPct * 100).toFixed(4)}%` : '0.00%'}
                         </span>
                     </div>
                 </div>
-                <button
-                    onClick={handleBuy}
-                    disabled={
-                        isLoading ||
-                        !buyAmount ||
-                        parseFloat(buyAmount) <= 0 ||
-                        !wallet?.publicKey
-                    }
-                    className={`w-full py-3 mt-auto rounded-lg font-bold transition-colors ${
-                        isLoading || !wallet?.publicKey
-                            ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
-                            : !buyAmount || parseFloat(buyAmount) <= 0
-                                ? 'bg-green-800 text-gray-500 cursor-not-allowed'
-                                : 'bg-green-600 hover:bg-green-700 text-white'
-                    }`}
-                >
-                    {isLoading ? "Processing..." : "Buy Token"}
-                </button>
-            </div>
+                    <button
+                        onClick={handleBuy}
+                        disabled={
+                            isLoading ||
+                            !buyAmount ||
+                            parseFloat(buyAmount) <= 0 ||
+                            !wallet?.publicKey
+                        }
+                        className={`w-full py-3 mt-auto rounded-lg font-bold transition-colors ${isLoading || !wallet?.publicKey
+                                ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
+                                : !buyAmount || parseFloat(buyAmount) <= 0
+                                    ? 'bg-green-800 text-gray-500 cursor-not-allowed'
+                                    : 'bg-green-600 hover:bg-green-700 text-white'
+                            }`}
+                    >
+                        {isLoading ? "Processing..." : "Buy Token"}
+                    </button>
+
+                </div>
         )}
 
         {activeTab === 'sell' && (
@@ -508,38 +490,38 @@ return (
                 </div>
                 <div className="bg-gray-800 p-3 rounded-lg space-y-2 text-sm">
                     <div className="flex justify-between">
-                        <span className="text-gray-400">Min. SOL Received:</span>
+                        <span className="text-gray-400">SOL Received:</span>
                         <span className="text-white">
-                            {(expectedSellOutput * (1 - slippage / 100)).toFixed(6)}
+                            {activeTab === 'sell' && jupiterQuote ? new Decimal(jupiterQuote.outAmount).div(10 ** 9).toFixed(6) : '0.00'}
                         </span>
                     </div>
                     <div className="flex justify-between">
                         <span className="text-gray-400">Price Impact:</span>
-                        <span className={`font-medium ${sellPriceImpact > 5 ? 'text-red-400' : sellPriceImpact > 1 ? 'text-yellow-400' : 'text-green-400'}`}>
-                            {sellPriceImpact.toFixed(2)}%
+                        <span className={`font-medium ${activeTab === 'sell' && jupiterQuote && jupiterQuote.priceImpactPct * 100 > 5 ? 'text-red-400' : activeTab === 'sell' && jupiterQuote && jupiterQuote.priceImpactPct * 100 > 1 ? 'text-yellow-400' : 'text-green-400'}`}>
+                            {activeTab === 'sell' && jupiterQuote ? `${(jupiterQuote.priceImpactPct * 100).toFixed(4)}%` : '0.00%'}
                         </span>
                     </div>
                 </div>
                 <button
-                    onClick={handleSell}
-                    disabled={
-                        isLoading ||
-                        !sellAmount ||
-                        parseFloat(sellAmount) <= 0 ||
-                        !wallet?.publicKey
-                    }
-                    className={`w-full py-3 mt-auto rounded-lg font-bold transition-colors ${
-                        isLoading || !wallet?.publicKey
-                            ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
-                            : !sellAmount || parseFloat(sellAmount) <= 0
-                                ? 'bg-red-800 text-gray-500 cursor-not-allowed'
-                                : 'bg-red-600 hover:bg-red-700 text-white'
-                    }`}
-                >
-                    {isLoading ? "Processing..." : "Sell Token"}
-                </button>
-            </div>
-        )}
+                        onClick={handleSell}
+                        disabled={
+                            isLoading ||
+                            !sellAmount ||
+                            parseFloat(sellAmount) <= 0 ||
+                            !wallet?.publicKey
+                        }
+                        className={`w-full py-3 mt-auto rounded-lg font-bold transition-colors ${isLoading || !wallet?.publicKey
+                                ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
+                                : !sellAmount || parseFloat(sellAmount) <= 0
+                                    ? 'bg-red-800 text-gray-500 cursor-not-allowed'
+                                    : 'bg-red-600 hover:bg-red-700 text-white'
+                            }`}
+                    >
+                        {isLoading ? "Processing..." : "Sell Token"}
+                    </button>
+
+                </div>
+            )}
     </div>
 );
 }
