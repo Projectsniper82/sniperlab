@@ -2,7 +2,7 @@
 
 // Polyfill must come first
 import '@/utils/bufferPolyfill';
-
+import AppHeader from '@/components/AppHeader';
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 
 // Solana Web3 & SPL Token
@@ -19,7 +19,7 @@ import Decimal from 'decimal.js';
 
 // Context
 import { useNetwork, NetworkType } from '@/context/NetworkContext';
-
+import { useToken } from '@/context/TokenContext';
 // Utils
 import {
     MAINNET_AMM_V4_PROGRAM_ID,
@@ -143,7 +143,7 @@ export default function HomePage() {
 const loadIdRef = useRef(0);
 
     const [wallet, setWallet] = useState<PhantomWallet | null>(null);
-    const [tokenAddress, setTokenAddress] = useState('');
+    const { tokenAddress, setTokenAddress } = useToken();
     const [tokenInfo, setTokenInfo] = useState<TokenInfoState | null>(null);
     const [solBalance, setSolBalance] = useState(0);
     const [tokenBalance, setTokenBalance] = useState('0');
@@ -765,19 +765,7 @@ useEffect(() => {
     return (
         <div className="p-4 sm:p-6 text-white bg-gray-950 min-h-screen font-sans">
             {/* Header */}
-            <header className="mb-6 text-center">
-                <div className="flex flex-col sm:flex-row justify-center items-center mb-2 sm:space-x-4 space-y-2 sm:space-y-0">
-                    <h1 className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-purple-400 to-blue-400 bg-clip-text text-transparent pb-2">
-                        Sniper Lab
-                    </h1>
-                    <div className="bg-gray-800 p-1 rounded-lg flex space-x-1">
-                        <button onClick={() => handleNetworkChange('devnet')} className={`px-3 py-1 text-xs rounded-md transition-colors ${network === 'devnet' ? 'bg-blue-600 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'}`}>Devnet</button>
-                        <button onClick={() => handleNetworkChange('mainnet-beta')} className={`px-3 py-1 text-xs rounded-md transition-colors ${network === 'mainnet-beta' ? 'bg-red-600 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'}`}>Mainnet</button>
-                    </div>
-                </div>
-                <p className="text-gray-400 text-sm">Current Network: <span className="font-bold text-yellow-400">{network}</span> | RPC: <span className="text-xs text-gray-500 break-all">{rpcUrl}</span></p>
-                <p className="text-gray-400 text-xs mt-1">Test token minting, LP management, and live pricing.</p>
-            </header>
+            <AppHeader onNetworkChange={handleNetworkChange} />
 
             {/* Mint Button Section */}
             {wallet && (
