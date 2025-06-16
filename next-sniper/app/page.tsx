@@ -42,7 +42,8 @@ import TokenInfo from '@/components/TokenInfo';
 import SimulatedLiquidityManager from '@/components/SimulatedLiquidityManager';
 import TradingInterface from '@/components/TradingInterface';
 import LiveTokenChart from '@/components/LiveTokenChart';
-
+import { useWallet } from '@solana/wallet-adapter-react';
+import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
 // Notification types
 type NotificationType = 'success' | 'error' | 'info' | '';
 
@@ -140,9 +141,20 @@ interface StrictPhantomWalletForMinting {
 
 export default function HomePage() {
     const { network, setNetwork, connection, rpcUrl } = useNetwork();
-const loadIdRef = useRef(0);
+    const loadIdRef = useRef(0);
 
-    const [wallet, setWallet] = useState<PhantomWallet | null>(null);
+    const globalWallet = useWallet();
+    const wallet: PhantomWallet | null = useMemo(() => {
+        if (!globalWallet.connected || !globalWallet.publicKey || !globalWallet.signTransaction || !globalWallet.signAllTransactions) {
+            return null;
+        }
+        return {
+            publicKey: globalWallet.publicKey,
+            signTransaction: globalWallet.signTransaction,
+            signAllTransactions: globalWallet.signAllTransactions,
+            isPhantom: globalWallet.wallet?.adapter.name === 'Phantom',
+        };
+    }, [globalWallet.connected, globalWallet.publicKey, globalWallet.wallet, globalWallet.signTransaction, globalWallet.signAllTransactions]);
     const { tokenAddress, setTokenAddress } = useToken();
     const [tokenInfo, setTokenInfo] = useState<TokenInfoState | null>(null);
     const [solBalance, setSolBalance] = useState(0);
@@ -151,7 +163,7 @@ const loadIdRef = useRef(0);
     const [simPoolRefresh, setSimPoolRefresh] = useState(0);
 
     useEffect(() => {
-}, [isLoading]);
+    }, [isLoading]);
 
     const [errorMessage, setErrorMessage] = useState('');
     const [notification, setNotification] = useState<{
@@ -169,6 +181,7 @@ const loadIdRef = useRef(0);
     const [selectedPool, setSelectedPool] = useState<DiscoveredPoolDetailed | null>(null);
     const [isPoolListCollapsed, setIsPoolListCollapsed] = useState<boolean>(true);
     const [priceInfo, setPriceInfo] = useState<{ price: number | null, loading: boolean }>({ price: null, loading: false });
+    const [isMounted, setIsMounted] = useState(false);
     useEffect(() => {
         const { isReady, missingDependencies } = checkRaydiumDependencies();
         if (!isReady) {
@@ -177,7 +190,9 @@ const loadIdRef = useRef(0);
             setErrorMessage(`Missing SDK dependencies`);
         }
     }, []);
-
+    useEffect(() => {
+        setIsMounted(true);
+    }, []);
     const fetchTokenBalance = useCallback(async (ownerPublicKey: PublicKey, mintPublicKey: PublicKey) => {
         try {
             const tokenAccounts = await connection.getParsedTokenAccountsByOwner(ownerPublicKey, { mint: mintPublicKey }, 'confirmed');
@@ -195,7 +210,38 @@ const loadIdRef = useRef(0);
             setTokenBalance('0');
         }
     }, [connection, network]);
+    useEffect(() => {
+        const fetchBalancesAndInit = async () => {
+            if (globalWallet.publicKey && globalWallet.connected && connection) {
+                console.log('[Balance Fetch] Wallet connected. Fetching balances...');
+                setIsLoading(true);
+                try {
+                    // Fetch SOL Balance
+                    const balance = await connection.getBalance(globalWallet.publicKey);
+                    setSolBalance(balance / 1e9);
 
+                    // Initialize Raydium SDK for the user
+                    await initRaydiumSdkForUser(connection, globalWallet.publicKey);
+
+                    // Fetch SPL Token Balance (if a token address is present)
+                    if (tokenAddress) {
+                        await fetchTokenBalance(globalWallet.publicKey, new PublicKey(tokenAddress));
+                    }
+                    setNotification({ show: true, message: 'Wallet connected and balances loaded!', type: 'success' });
+                    setTimeout(() => setNotification(prev => prev.message.includes("balances loaded") ? { show: false, message: '', type: '' } : prev), 3000);
+
+                } catch (error) {
+                    console.error("Error fetching balances after connect:", error);
+                    setNotification({ show: true, message: 'Could not fetch balances.', type: 'error' });
+
+                } finally {
+                    setIsLoading(false);
+                }
+            }
+        };
+
+        fetchBalancesAndInit();
+    }, [globalWallet.connected, globalWallet.publicKey, connection, tokenAddress, fetchTokenBalance]);
     const fetchLpTokenDetails = useCallback(async () => {
         // LOG 1: Indicate function was called and state of critical dependencies
         console.log('[fetchLpTokenDetails_DEBUG] Called.', {
@@ -391,54 +437,6 @@ const loadIdRef = useRef(0);
         }
     }, [wallet, tokenAddress, connection, tokenInfo, network, selectedPool, setNotification /* Add other state setters like setLpTokenBalance, setUserPairedSOL etc., if your linter requires them */]);
 
-
-    const handleWalletConnected = useCallback(async (phantomProvider: any) => {
-        // ... (Keep this function exactly as it is in your provided code)
-        console.log('[WALLET CONNECT] handleWalletConnected: Received phantomProvider object:');
-        console.dir(phantomProvider);
-        // Paste this block in its place
-        if (!phantomProvider || !phantomProvider.publicKey) {
-            setNotification({ show: true, message: 'Invalid wallet provider object.', type: 'error' }); return;
-        }
-        try {
-            let currentPublicKey = phantomProvider.publicKey;
-            if (!currentPublicKey) {
-                setNotification({ show: true, message: 'Wallet connection failed: Public key not available from provider.', type: 'error' }); return;
-            }
-            console.log('[WALLET CONNECT] Public key from provider:', currentPublicKey.toString());
-            const conformingWallet: PhantomWallet = {
-                publicKey: currentPublicKey,
-                signTransaction: phantomProvider.signTransaction.bind(phantomProvider),
-                signAllTransactions: phantomProvider.signAllTransactions.bind(phantomProvider),
-                isPhantom: phantomProvider.isPhantom,
-            };
-            setWallet(conformingWallet);
-            setNotification({ show: true, message: `Wallet connected on ${network}! PK: ${currentPublicKey.toBase58().substring(0, 6)}...`, type: 'success' });
-            setTimeout(() => setNotification(prev => prev.message.includes("Wallet connected") ? { show: false, message: '', type: '' } : prev), 3000);
-            setIsLoading(true);
-            const pkInstance = currentPublicKey instanceof PublicKey ? currentPublicKey : new PublicKey(currentPublicKey.toString());
-            const bal = await connection.getBalance(pkInstance);
-            setSolBalance(bal / 1e9);
-            
-            const ownerPkInstance = conformingWallet.publicKey instanceof PublicKey
-                ? conformingWallet.publicKey
-                : new PublicKey(conformingWallet.publicKey.toString());
-
-            await initRaydiumSdkForUser(connection, ownerPkInstance);
-            if (tokenAddress) {
-                await fetchTokenBalance(pkInstance, new PublicKey(tokenAddress));
-            }
-        } catch (e: any) {
-            console.error(`Error during wallet connection or post-connection ops on ${network}:`, e.message, e.stack, e);
-            setNotification({ show: true, message: `Connection Ops Error: ${e.message}`, type: 'error' });
-            setTimeout(() => setNotification({ show: false, message: '', type: '' }), 4000);
-        } finally {
-            setIsLoading(false);
-          console.log("[HomePage][setIsLoading] set to FALSE (FUNCTION_NAME)");
-  
-        }
-    }, [connection, network, tokenAddress, fetchTokenBalance, setNotification, setIsLoading]);
-
     useEffect(() => {
         // ... (Keep this wallet logging useEffect as is)
         if (wallet) {
@@ -486,7 +484,6 @@ const loadIdRef = useRef(0);
         }
     }, [wallet, connection, tokenAddress, tokenInfo, selectedPool, fetchTokenBalance, fetchLpTokenDetails, network, setIsLoading, setNotification]);
 
-// Replace your existing loadTokenInfo function with this one.
 const loadTokenInfo = useCallback(async () => {
     if (!tokenAddress) {
         setTokenInfo(null);
@@ -746,7 +743,7 @@ useEffect(() => {
 
     const handleNetworkChange = (newNetwork: NetworkType) => {
         if (network === newNetwork) return;
-        setWallet(null); setTokenAddress(''); setTokenInfo(null); setSolBalance(0); setTokenBalance('0');
+        setTokenAddress(''); setTokenInfo(null); setSolBalance(0); setTokenBalance('0');
         setLpTokenBalance('0'); setUserPairedSOL(0); setUserPairedToken(0); setTotalLpSupply('0'); setLpTokenDecimals(0);
         setErrorMessage(''); setIsLoading(false);
         console.log("[HomePage][setIsLoading] set to FALSE (FUNCTION_NAME)");
@@ -904,7 +901,7 @@ useEffect(() => {
                             <button onClick={refreshBalances} disabled={!wallet || isLoading} className="px-4 py-2 bg-gray-700 rounded hover:bg-gray-600 disabled:opacity-50">{isLoading ? 'Refreshing...' : 'Refresh Balances'}</button>
                         </div>
                     </div>
-                    <WalletConnect setWallet={handleWalletConnected} connection={connection} refreshBalances={refreshBalances} setNotification={setNotification} />
+                   {isMounted && <WalletMultiButton />}
                 </div>
 
                 {wallet && tokenInfo ? (

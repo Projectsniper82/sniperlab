@@ -1,0 +1,113 @@
+'use client';
+
+import React, { useState } from 'react';
+
+const NumberInputStepper = ({ label, value, onChange, step, min, unit, helpText }: { label:string, value:string, onChange:(v:string)=>void, step:number, min:number, unit:string, helpText:string }) => {
+    const handleStep = (direction: 'up' | 'down') => {
+        const currentValue = parseFloat(value) || 0;
+        const newValue = direction === 'up' ? currentValue + step : Math.max(min, currentValue - step);
+        onChange(newValue.toFixed(2));
+    };
+
+    return (
+        <div>
+            <label className="block text-sm font-medium text-gray-300 mb-1">{label}</label>
+            <div className="flex items-center">
+                <input
+                    type="number"
+                    value={value}
+                    onChange={(e) => onChange(e.target.value)}
+                    className="w-full p-2 bg-gray-700 border-gray-600 rounded-l-md text-white text-center font-mono"
+                    placeholder="0.0"
+                />
+                <div className="flex flex-col">
+                    <button onClick={() => handleStep('up')} className="px-2 py-0.5 bg-gray-600 hover:bg-gray-500 text-white rounded-tr-md border-b border-gray-700">+</button>
+                    <button onClick={() => handleStep('down')} className="px-2 py-0.5 bg-gray-600 hover:bg-gray-500 text-white rounded-br-md">-</button>
+                </div>
+            </div>
+            <p className="text-xs text-gray-400 mt-1">{helpText}</p>
+        </div>
+    );
+};
+
+interface WalletCreationManagerProps {
+    onStartCreation: (totalSol: number, durationMinutes: number) => void;
+    onClearWallets: () => void;
+    isProcessing: boolean;
+}
+
+export default function WalletCreationManager({ onStartCreation, onClearWallets, isProcessing }: WalletCreationManagerProps) {
+    const [isExpanded, setIsExpanded] = useState(true);
+    const [totalSol, setTotalSol] = useState('0.6');
+    const [duration, setDuration] = useState('30');
+
+    const handleCreateClick = () => {
+        const solAmount = parseFloat(totalSol);
+        const durationMinutes = parseInt(duration, 10);
+        if (isNaN(solAmount) || solAmount <= 0) {
+            alert("Please enter a valid amount of SOL.");
+            return;
+        }
+        if (isNaN(durationMinutes) || durationMinutes < 1) {
+            alert("Please enter a valid duration in minutes.");
+            return;
+        }
+        onStartCreation(solAmount, durationMinutes); 
+    };
+
+    return (
+        <div className="bg-gradient-to-b from-gray-800 to-gray-800/80 rounded-xl border border-gray-700 shadow-lg overflow-hidden transition-all duration-300">
+            <div 
+                className="p-4 cursor-pointer flex justify-between items-center"
+                onClick={() => setIsExpanded(!isExpanded)}
+            >
+                <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                    <span className="text-purple-400">❖</span>
+                    Bot Creation Manager
+                </h2>
+                <span className={`transition-transform transform text-gray-400 ${isExpanded ? 'rotate-180' : ''}`}>
+                    ▼
+                </span>
+            </div>
+            
+            <div className={`transition-all duration-500 ease-in-out ${isExpanded ? 'max-h-96 opacity-100' : 'max-h-0 opacity-0'}`}>
+                <div className="p-4 border-t border-gray-700/50 space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                        <NumberInputStepper 
+                            label="Total SOL to Distribute"
+                            value={totalSol}
+                            onChange={setTotalSol}
+                            step={0.1}
+                            min={0.1}
+                            unit="SOL"
+                            helpText="From your main wallet."
+                        />
+                         <NumberInputStepper 
+                            label="Duration"
+                            value={duration}
+                            onChange={setDuration}
+                            step={5}
+                            min={1}
+                            unit="Min"
+                            helpText="For random creation."
+                        />
+                    </div>
+                    <button 
+                        onClick={handleCreateClick} 
+                        disabled={isProcessing}
+                        className="w-full py-3 bg-purple-600 hover:bg-purple-500 rounded-lg transition text-white font-semibold shadow-md disabled:bg-gray-500 disabled:cursor-not-allowed"
+                    >
+                        {isProcessing ? "Processing..." : "Start Batch Creation (6 Bots)"}
+                    </button>
+                    <button 
+                        onClick={onClearWallets} 
+                        disabled={isProcessing}
+                        className="w-full py-2 bg-red-900/50 hover:bg-red-800/70 border border-red-700/50 rounded-lg transition text-red-300 text-sm font-semibold disabled:bg-gray-500 disabled:cursor-not-allowed"
+                    >
+                        Clear All Bot Wallets
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
