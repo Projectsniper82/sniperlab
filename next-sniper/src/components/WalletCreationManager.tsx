@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useState } from 'react';
+import { useNetwork } from '@/context/NetworkContext';
+import { clearBotWallet } from '@/utils/botWalletManager';
 
 const NumberInputStepper = ({ label, value, onChange, step, min, unit, helpText }: { label:string, value:string, onChange:(v:string)=>void, step:number, min:number, unit:string, helpText:string }) => {
     const handleStep = (direction: 'up' | 'down') => {
@@ -40,6 +42,13 @@ export default function WalletCreationManager({ onStartCreation, onClearWallets,
     const [isExpanded, setIsExpanded] = useState(true);
     const [totalSol, setTotalSol] = useState('0.6');
     const [duration, setDuration] = useState('30');
+    const { network } = useNetwork();
+
+    const handleClearCurrentWallet = () => {
+        if (window.confirm("Are you sure? This will permanently delete the current bot wallet for this network.")) {
+            clearBotWallet(network);
+        }
+    };
 
     const handleCreateClick = () => {
         const solAmount = parseFloat(totalSol);
@@ -99,12 +108,19 @@ export default function WalletCreationManager({ onStartCreation, onClearWallets,
                     >
                         {isProcessing ? "Processing..." : "Start Batch Creation (6 Bots)"}
                     </button>
-                    <button 
-                        onClick={onClearWallets} 
+                    <button
+                        onClick={onClearWallets}
                         disabled={isProcessing}
                         className="w-full py-2 bg-red-900/50 hover:bg-red-800/70 border border-red-700/50 rounded-lg transition text-red-300 text-sm font-semibold disabled:bg-gray-500 disabled:cursor-not-allowed"
                     >
                         Clear All Bot Wallets
+                    </button>
+                    <button
+                        onClick={handleClearCurrentWallet}
+                        disabled={isProcessing}
+                        className="w-full py-2 bg-red-800/50 hover:bg-red-700/70 border border-red-700/50 rounded-lg transition text-red-300 text-sm font-semibold disabled:bg-gray-500 disabled:cursor-not-allowed"
+                    >
+                        Clear Bot Wallet
                     </button>
                 </div>
             </div>

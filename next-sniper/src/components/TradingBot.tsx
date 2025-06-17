@@ -1,14 +1,16 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+
 import { useNetwork } from '@/context/NetworkContext';
 import { LAMPORTS_PER_SOL, PublicKey } from '@solana/web3.js';
 import { getAssociatedTokenAddress, getAccount } from '@solana/spl-token';
-
+import React, { useState, useEffect, useCallback } from 'react';
 // The props interface now accepts all properties from the parent.
 interface TradingBotProps {
     botPublicKeyString: string;
     tokenMintAddress: string;
+    selectedTokenAddress: string;
+    isLpActive: boolean;
     isLogicEnabled: boolean;
     onFund: (amount: number) => Promise<string>;
     onWithdraw: (recipientAddress: string, amount: number) => Promise<string>;
@@ -18,6 +20,8 @@ interface TradingBotProps {
 export default function TradingBot({
     botPublicKeyString,
     tokenMintAddress,
+    selectedTokenAddress,
+    isLpActive,
     isLogicEnabled,
     onFund,
     onWithdraw,
@@ -38,8 +42,6 @@ export default function TradingBot({
     const [withdrawSolAddress, setWithdrawSolAddress] = useState('');
     const [withdrawTokenAmount, setWithdrawTokenAmount] = useState('');
     const [withdrawTokenAddress, setWithdrawTokenAddress] = useState('');
-
-    const balancePollInterval = useRef<NodeJS.Timeout | null>(null);
 
     const addLog = useCallback((message: string) => {
         console.log(`[TRADING BOT LOG] ${message}`);
@@ -85,12 +87,7 @@ export default function TradingBot({
 
     useEffect(() => {
         refreshBotBalances();
-        const intervalId = setInterval(refreshBotBalances, 30000);
-        return () => {
-            if (intervalId) {
-                clearInterval(intervalId);
-            }
-        };
+        
     }, [refreshBotBalances]);
 
     const handleFundClick = async () => {
@@ -173,6 +170,17 @@ export default function TradingBot({
                         {isRefreshing ? 'Refreshing...' : 'Refresh Balances'}
                     </button>
                 </div>
+            </div>
+
+            <div className="bg-gray-800 p-3 rounded-lg flex justify-between text-sm text-gray-300">
+                <span>
+                    Token:
+                    <span className="font-mono text-xs text-white ml-1 break-all">{selectedTokenAddress || 'N/A'}</span>
+                </span>
+                <span>
+                    LP Active:
+                    <span className={`ml-1 font-bold ${isLpActive ? 'text-green-400' : 'text-red-400'}`}>{isLpActive ? 'Yes' : 'No'}</span>
+                </span>
             </div>
 
             <div className="bg-gray-800 p-4 rounded-lg">
