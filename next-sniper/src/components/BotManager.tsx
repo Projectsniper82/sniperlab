@@ -108,9 +108,19 @@ export default function BotManager({ isLogicEnabled, selectedTokenAddress, isLpA
                     Bot Wallet Management ({network})
                 </h2>
                 <div className='flex items-center justify-between'>
-                    <p className="text-sm text-green-400">
-                        {botWallets.length > 0 ? `${botWallets.length} wallet(s) loaded.` : `No bot wallets found for ${network}.`}
-                    </p>
+                    <div className="space-y-1">
+                        <p className="text-sm text-gray-300">
+                            Token:
+                            <span className="font-mono text-xs text-white ml-1 break-all">{selectedTokenAddress || 'N/A'}</span>
+                        </p>
+                        <p className="text-sm text-gray-300">
+                            LP Active:
+                            <span className={`ml-1 font-bold ${isLpActive ? 'text-green-400' : 'text-red-400'}`}>{isLpActive ? 'Yes' : 'No'}</span>
+                        </p>
+                        <p className="text-sm text-green-400">
+                            {botWallets.length > 0 ? `${botWallets.length} wallet(s) loaded.` : `No bot wallets found for ${network}.`}
+                        </p>
+                    </div>
                     <div className='space-x-2'>
                         <button onClick={handleCreateBotWallet} className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded">
                             Add Wallet
