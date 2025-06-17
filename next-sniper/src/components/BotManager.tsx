@@ -138,6 +138,7 @@ export default function BotManager({ isLogicEnabled, selectedTokenAddress, isLpA
                 botWallets.map(wallet => (
                     <TradingBot
                         key={wallet.publicKey.toBase58()}
+                        botWallet={wallet}
                         botPublicKeyString={wallet.publicKey.toBase58()}
                         onFund={createFundHandler(wallet)}
                         onWithdraw={createWithdrawHandler(wallet)}

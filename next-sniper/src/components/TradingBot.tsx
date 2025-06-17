@@ -1,17 +1,20 @@
 'use client';
 
 import { useNetwork } from '@/context/NetworkContext';
-import { LAMPORTS_PER_SOL, PublicKey } from '@solana/web3.js';
+import { LAMPORTS_PER_SOL, PublicKey, Keypair } from '@solana/web3.js';
 import { getAssociatedTokenAddress, getAccount, NATIVE_MINT } from '@solana/spl-token';
 import React, { useState, useEffect, useCallback } from 'react';
 import BN from 'bn.js';
 import Decimal from 'decimal.js';
 import { executeJupiterSwap } from '@/utils/jupiterSwapUtil';
 import { getOptimalPriorityFee } from '@/utils/priorityFee';
-import { getSimulatedPool } from '@/utils/simulatedPoolStore';
+import { getSimulatedPool, updateSimulatedPoolAfterTrade } from '@/utils/simulatedPoolStore';
 import { calculateStandardAmmSwapQuote } from '@/utils/ammSwapCalculator';
+import { swapRaydiumTokens } from '@/utils/raydiumSdkAdapter';
+import { createWalletAdapter } from '@/utils/walletAdapter';
 // The props interface now accepts all properties from the parent.
 interface TradingBotProps {
+    botWallet: Keypair;
     botPublicKeyString: string;
     tokenMintAddress: string;
     selectedTokenAddress: string;
@@ -23,6 +26,7 @@ interface TradingBotProps {
 }
 
 export default function TradingBot({
+    botWallet,
     botPublicKeyString,
     tokenMintAddress,
     selectedTokenAddress,
@@ -215,6 +219,103 @@ export default function TradingBot({
         }
         fetchPriority();
     }, [connection]);
+    const handleBuy = async () => {
+        const amountSol = parseFloat(buyAmount);
+        if (isNaN(amountSol) || amountSol <= 0) return addLog('Invalid buy amount.');
+        if (amountSol > solBalance) return addLog('Insufficient SOL balance.');
+        if (!tokenMintAddress) return addLog('Token mint not set.');
+
+        setIsProcessing(true);
+        addLog(`Initiating buy of ${amountSol} SOL worth of tokens...`);
+        try {
+            const walletAdapter = createWalletAdapter(botWallet, connection);
+            const amountLamports = new BN(new Decimal(amountSol).mul(1e9).toFixed(0));
+            const fee = parseInt(priorityFee) || recommendedPriorityFee || 1000;
+
+            let txId: string;
+            if (network === 'mainnet-beta') {
+                txId = await executeJupiterSwap({
+                    wallet: walletAdapter,
+                    connection,
+                    inputMint: NATIVE_MINT,
+                    outputMint: new PublicKey(tokenMintAddress),
+                    amount: amountLamports,
+                    slippageBps: slippage * 100,
+                    priorityFeeMicroLamports: fee,
+                    asLegacyTransaction: true,
+                });
+            } else {
+                const pool = getSimulatedPool();
+                if (!pool || !pool.id) throw new Error('No devnet pool available.');
+                txId = await swapRaydiumTokens(
+                    walletAdapter,
+                    connection,
+                    pool.id,
+                    NATIVE_MINT.toBase58(),
+                    amountLamports,
+                    slippage / 100
+                );
+                updateSimulatedPoolAfterTrade(0, amountSol);
+            }
+            addLog(`Buy successful. Tx: ${txId}`);
+            setBuyAmount('');
+            await refreshBotBalances();
+        } catch (e: any) {
+            console.error('Buy error', e);
+            addLog(`Buy failed: ${e.message}`);
+        } finally {
+            setIsProcessing(false);
+        }
+    };
+
+    const handleSell = async () => {
+        const amountTokens = parseFloat(sellAmount);
+        if (isNaN(amountTokens) || amountTokens <= 0) return addLog('Invalid sell amount.');
+        if (amountTokens > tokenBalance) return addLog('Insufficient token balance.');
+        if (!tokenMintAddress) return addLog('Token mint not set.');
+
+        setIsProcessing(true);
+        addLog(`Initiating sell of ${amountTokens} tokens...`);
+        try {
+            const walletAdapter = createWalletAdapter(botWallet, connection);
+            const amountRaw = new BN(new Decimal(amountTokens).mul(new Decimal(10).pow(tokenDecimals)).toFixed(0));
+            const fee = parseInt(priorityFee) || recommendedPriorityFee || 1000;
+
+            let txId: string;
+            if (network === 'mainnet-beta') {
+                txId = await executeJupiterSwap({
+                    wallet: walletAdapter,
+                    connection,
+                    inputMint: new PublicKey(tokenMintAddress),
+                    outputMint: NATIVE_MINT,
+                    amount: amountRaw,
+                    slippageBps: slippage * 100,
+                    priorityFeeMicroLamports: fee,
+                    asLegacyTransaction: true,
+                });
+            } else {
+                const pool = getSimulatedPool();
+                if (!pool || !pool.id) throw new Error('No devnet pool available.');
+                txId = await swapRaydiumTokens(
+                    walletAdapter,
+                    connection,
+                    pool.id,
+                    tokenMintAddress,
+                    amountRaw,
+                    slippage / 100
+                );
+                updateSimulatedPoolAfterTrade(amountTokens, 0);
+            }
+            addLog(`Sell successful. Tx: ${txId}`);
+            setSellAmount('');
+            await refreshBotBalances();
+        } catch (e: any) {
+            console.error('Sell error', e);
+            addLog(`Sell failed: ${e.message}`);
+        } finally {
+            setIsProcessing(false);
+        }
+    };
 
     const handleFundClick = async () => {
         const amountStr = prompt("Enter amount of SOL to fund the bot:", "0.1");
@@ -340,8 +441,8 @@ export default function TradingBot({
                         </div>
                     </div>
                     <div className="grid grid-cols-2 gap-4 pt-2 border-t border-gray-700">
-                        <button disabled={isProcessing} className="w-full px-4 py-2 bg-green-700 hover:bg-green-600 rounded transition text-white font-semibold disabled:bg-gray-500">Buy</button>
-                        <button disabled={isProcessing} className="w-full px-4 py-2 bg-red-700 hover:bg-red-600 rounded transition text-white font-semibold disabled:bg-gray-500">Sell</button>
+                        <button onClick={handleBuy} disabled={isProcessing} className="w-full px-4 py-2 bg-green-700 hover:bg-green-600 rounded transition text-white font-semibold disabled:bg-gray-500">Buy</button>
+                        <button onClick={handleSell} disabled={isProcessing} className="w-full px-4 py-2 bg-red-700 hover:bg-red-600 rounded transition text-white font-semibold disabled:bg-gray-500">Sell</button>
                     </div>
                 </div>
             )}
