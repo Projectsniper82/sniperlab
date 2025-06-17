@@ -43,7 +43,7 @@ import SimulatedLiquidityManager from '@/components/SimulatedLiquidityManager';
 import TradingInterface from '@/components/TradingInterface';
 import LiveTokenChart from '@/components/LiveTokenChart';
 import { useWallet } from '@solana/wallet-adapter-react';
-import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
+import AirdropCommand from '@/components/AirdropCommand';
 // Notification types
 type NotificationType = 'success' | 'error' | 'info' | '';
 
@@ -181,7 +181,6 @@ export default function HomePage() {
     const [selectedPool, setSelectedPool] = useState<DiscoveredPoolDetailed | null>(null);
     const [isPoolListCollapsed, setIsPoolListCollapsed] = useState<boolean>(true);
     const [priceInfo, setPriceInfo] = useState<{ price: number | null, loading: boolean }>({ price: null, loading: false });
-    const [isMounted, setIsMounted] = useState(false);
     useEffect(() => {
         const { isReady, missingDependencies } = checkRaydiumDependencies();
         if (!isReady) {
@@ -190,9 +189,7 @@ export default function HomePage() {
             setErrorMessage(`Missing SDK dependencies`);
         }
     }, []);
-    useEffect(() => {
-        setIsMounted(true);
-    }, []);
+    
     const fetchTokenBalance = useCallback(async (ownerPublicKey: PublicKey, mintPublicKey: PublicKey) => {
         try {
             const tokenAccounts = await connection.getParsedTokenAccountsByOwner(ownerPublicKey, { mint: mintPublicKey }, 'confirmed');
@@ -901,8 +898,8 @@ useEffect(() => {
                             <button onClick={refreshBalances} disabled={!wallet || isLoading} className="px-4 py-2 bg-gray-700 rounded hover:bg-gray-600 disabled:opacity-50">{isLoading ? 'Refreshing...' : 'Refresh Balances'}</button>
                         </div>
                     </div>
-                   {isMounted && <WalletMultiButton />}
-                </div>
+                   {network === 'devnet' && <AirdropCommand />}
+                  </div>
 
                 {wallet && tokenInfo ? (
                     <div className="lg:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-6">
