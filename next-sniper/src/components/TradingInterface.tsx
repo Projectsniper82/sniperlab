@@ -14,6 +14,7 @@ import { NATIVE_MINT } from '@solana/spl-token';
 
 import { getSimulatedPool, updateSimulatedPoolAfterTrade } from '@/utils/simulatedPoolStore';
 import { isRaydiumPool, swapRaydiumTokens } from '@/utils/raydiumSdkAdapter'; // Ensure this adapter is correctly set up
+import { calculateStandardAmmSwapQuote } from '@/utils/ammSwapCalculator';
 import { DiscoveredPoolDetailed } from '@/utils/poolFinder';
 import { NetworkType, useNetwork } from '@/context/NetworkContext'; // Assuming useNetwork is correctly imported
 import { executeJupiterSwap } from '@/utils/jupiterSwapUtil';
@@ -167,68 +168,73 @@ function TradingInterface({
         }
     }, [poolDataForCalculations]);
 
-    // PASTE THIS NEW CODE IN ITS PLACE
-    useEffect(() => {
-        // This effect handles fetching quotes from Jupiter for Mainnet
-        if (network !== 'mainnet-beta') {
-            // For devnet, we clear any jupiter quotes and rely on the old logic.
-            if (jupiterQuote) setJupiterQuote(null);
-            return;
-        }
+    // Fetch swap quotes to show expected output and price impact
 
-        // Determine which amount to use for the quote
+    useEffect(() => {
         const amountToQuote = activeTab === 'buy' ? buyAmount : sellAmount;
         const amountFloat = parseFloat(amountToQuote);
-
-        // If amount is invalid, clear the quote and stop.
-        if (isNaN(amountFloat) || amountFloat <= 0) {
-            setJupiterQuote(null);
-            return;
-        }
-
-        // This is a "debounce" timer. It waits until you stop typing for 300ms before fetching.
+        if (isNaN(amountFloat) || amountFloat <= 0) { setJupiterQuote(null); return; }
         const handler = setTimeout(async () => {
             try {
-                setIsLoading(true); // Show a subtle loading state
-               console.log("[TradingInterface][setIsLoading] set to TRUE (jupiter quote fetch)");
-                const inputMint = activeTab === 'buy' ? NATIVE_MINT : new PublicKey(tokenAddress);
-                const outputMint = activeTab === 'buy' ? new PublicKey(tokenAddress) : NATIVE_MINT;
+                setIsLoading(true);
+                console.log("[TradingInterface][setIsLoading] set to TRUE (quote fetch)");
 
-                // Convert the UI amount to the correct lamports/raw amount
-                const amountInSmallestUnit = new BN(
-                    new Decimal(amountFloat).mul(
-                        new Decimal(10).pow(activeTab === 'buy' ? 9 : tokenDecimals)
-                    ).toFixed(0)
-                );
-
-                // Fetch the quote from your utility function
-                const quote = await executeJupiterSwap({
-                    wallet,
-                    connection,
-                    inputMint,
-                    outputMint,
-                    amount: amountInSmallestUnit,
-                    slippageBps: slippage * 100,
-                    onlyGetQuote: true
-                });
-
-                console.log("Received Jupiter Quote:", quote);
-                setJupiterQuote(quote); // Store the entire quote object
+                if (network === 'mainnet-beta') {
+                    const inputMint = activeTab === 'buy' ? NATIVE_MINT : new PublicKey(tokenAddress);
+                    const outputMint = activeTab === 'buy' ? new PublicKey(tokenAddress) : NATIVE_MINT;
+                    const amountInSmallestUnit = new BN(
+                        new Decimal(amountFloat).mul(new Decimal(10).pow(activeTab === 'buy' ? 9 : tokenDecimals)).toFixed(0)
+                    );
+                    const quote = await executeJupiterSwap({
+                        wallet,
+                        connection,
+                        inputMint,
+                        outputMint,
+                        amount: amountInSmallestUnit,
+                        slippageBps: slippage * 100,
+                        onlyGetQuote: true
+                    });
+                    console.log("Received Jupiter Quote:", quote);
+                    setJupiterQuote(quote);
+                } else {
+                    const pool = getSimulatedPool();
+                    if (!pool) { setJupiterQuote(null); return; }
+                    const q = calculateStandardAmmSwapQuote(amountFloat, activeTab === 'buy', {
+                        priceFromPool: pool.price,
+                        uiSolReserve: pool.solAmount,
+                        uiTokenReserve: pool.tokenAmount,
+                        solMintAddress: NATIVE_MINT.toBase58(),
+                        solDecimals: 9,
+                        pairedTokenMintAddress: pool.tokenAddress,
+                        pairedTokenDecimals: pool.tokenDecimals || tokenDecimals,
+                    }, slippage);
+                    if (q) {
+                        const outRaw = activeTab === 'buy'
+                            ? q.estimatedOutputUi.mul(new Decimal(10).pow(tokenDecimals))
+                            : q.estimatedOutputUi.mul(new Decimal(10).pow(9));
+                        const inRaw = activeTab === 'buy'
+                            ? new Decimal(amountFloat).mul(1e9)
+                            : new Decimal(amountFloat).mul(new Decimal(10).pow(tokenDecimals));
+                        setJupiterQuote({
+                            outAmount: outRaw.floor().toString(),
+                            otherAmountThreshold: q.minAmountOutRaw.toString(),
+                            priceImpactPct: q.priceImpactPercent.div(100).toNumber(),
+                            inAmount: inRaw.floor().toString(),
+                        });
+                    } else {
+                        setJupiterQuote(null);
+                    }
+                }
 
             } catch (error) {
-                console.error("Failed to get Jupiter quote:", error);
+                console.error("Failed to get quote:", error);
                 setJupiterQuote(null);
             } finally {
                 setIsLoading(false);
-                console.log("[TradingInterface][setIsLoading] set to FALSE (jupiter quote fetch)");
+                console.log("[TradingInterface][setIsLoading] set to FALSE (quote fetch)");
             }
-        }, 300); // 300ms delay
-
-        // This cleans up the timer if you type again before it finishes.
-        return () => {
-            clearTimeout(handler);
-        };
-
+        }, 300);
+        return () => clearTimeout(handler);
     }, [buyAmount, sellAmount, activeTab, network, tokenAddress, tokenDecimals, slippage, connection, wallet]);
 
     useEffect(() => {
@@ -238,120 +244,146 @@ function TradingInterface({
     }, [poolDataForCalculations]);
 
 
-const handleBuy = async () => {
-    if (!wallet?.publicKey || !isPoolSelected) {
-        setErrorMessage("Wallet not connected or no valid pool/route selected.");
-        return;
-    }
-    const buyAmountSOLFloat = parseFloat(buyAmount);
-    if (isNaN(buyAmountSOLFloat) || buyAmountSOLFloat <= 0) {
-        setErrorMessage("Please enter a valid SOL amount to buy");
-        return;
-    }
-    if (buyAmountSOLFloat > solBalance) {
-        setErrorMessage("Not enough SOL balance");
-        return;
-    }
-
-    setIsLoading(true);
-    console.log("[TradingInterface][setIsLoading] set to TRUE (handleBuy)");
-    setErrorMessage('');
-    setNotification({ show: true, message: `Processing buy on ${network}...`, type: 'info' });
-
-    try {
-        let txSignature: string;
-        const amountInLamports = new BN(new Decimal(buyAmountSOLFloat).mul(1e9).toFixed(0));
-
-        if (network === 'mainnet-beta') {
-            const priorityFee = await getOptimalPriorityFee(connection);
-            txSignature = await executeJupiterSwap({
-                wallet,
-                connection,
-                inputMint: NATIVE_MINT,
-                outputMint: new PublicKey(tokenAddress),
-                amount: amountInLamports,
-                slippageBps: slippage * 100,
-                priorityFeeMicroLamports: priorityFee,
-                asLegacyTransaction: true,
-            });
-        } else { // Devnet Logic
-            if (!selectedPool || !selectedPool.id) throw new Error("Devnet pool not selected.");
-            const slippageDecimal = slippage / 100;
-            txSignature = await swapRaydiumTokens(wallet, connection, selectedPool.id, NATIVE_MINT.toBase58(), amountInLamports, slippageDecimal);
-            updateSimulatedPoolAfterTrade(tokenAddress, { solIn: buyAmountSOLFloat });
+    const handleBuy = async () => {
+        if (!wallet?.publicKey || !isPoolSelected) {
+            setErrorMessage("Wallet not connected or no valid pool/route selected.");
+            return;
         }
-        
-        setNotification({ show: true, message: `Buy successful!`, type: 'success' });
-        setBuyAmount('');
-        await refreshBalances();
-
-    } catch (error: any) {
-        console.error(`[handleBuy] Error:`, error);
-        setErrorMessage(`Buy Failed: ${error.message}`);
-        setNotification({ show: true, message: `Buy Failed: ${error.message.substring(0, 100)}`, type: 'error' });
-    } finally {
-        setIsLoading(false);
-        console.log("[TradingInterface][setIsLoading] set to FALSE (handleBuy)");
-    }
-};
-
-const handleSell = async () => {
-    if (!wallet?.publicKey || !isPoolSelected) {
-        setErrorMessage("Wallet not connected or no valid pool/route selected.");
-        return;
-    }
-    const sellAmountTokensFloat = parseFloat(sellAmount);
-    if (isNaN(sellAmountTokensFloat) || sellAmountTokensFloat <= 0) {
-        setErrorMessage("Please enter a valid token amount to sell");
-        return;
-    }
-    const rawTokenBalanceBN = new BN(tokenBalance);
-    const rawTokensToSell = new BN(new Decimal(sellAmountTokensFloat).mul(10 ** tokenDecimals).toFixed(0));
-    if (rawTokensToSell.gt(rawTokenBalanceBN)) {
-        setErrorMessage(`Not enough token balance.`);
-        return;
-    }
-
-    setIsLoading(true);
-    console.log("[TradingInterface][setIsLoading] set to TRUE (handleSell)");
-    setErrorMessage('');
-    setNotification({ show: true, message: `Processing sell on ${network}...`, type: 'info' });
-
-    try {
-        let txSignature: string;
-
-        if (network === 'mainnet-beta') {
-            const priorityFee = await getOptimalPriorityFee(connection);
-            txSignature = await executeJupiterSwap({
-                wallet,
-                connection,
-                inputMint: new PublicKey(tokenAddress),
-                outputMint: NATIVE_MINT,
-                amount: rawTokensToSell,
-                slippageBps: slippage * 100,
-                priorityFeeMicroLamports: priorityFee,
-                asLegacyTransaction: true,
-            });
-        } else { // Devnet Logic
-            if (!selectedPool || !selectedPool.id) throw new Error("Devnet pool not selected.");
-            const slippageDecimal = slippage / 100;
-            txSignature = await swapRaydiumTokens(wallet, connection, selectedPool.id, tokenAddress, rawTokensToSell, slippageDecimal);
-            updateSimulatedPoolAfterTrade(tokenAddress, { tokenIn: sellAmountTokensFloat });
+        const buyAmountSOLFloat = parseFloat(buyAmount);
+        if (isNaN(buyAmountSOLFloat) || buyAmountSOLFloat <= 0) {
+            setErrorMessage("Please enter a valid SOL amount to buy");
+            return;
         }
-        
-        setNotification({ show: true, message: 'Sell successful!', type: 'success' });
-        setSellAmount('');
-        await refreshBalances();
+        if (buyAmountSOLFloat > solBalance) {
+            setErrorMessage("Not enough SOL balance");
+            return;
+        }
 
-    } catch (error: any) {
-        console.error(`[handleSell] Error:`, error);
-        setErrorMessage(`Sell Error: ${error.message}`);
-        setNotification({ show: true, message: `Sell Failed: ${error.message.substring(0, 100)}`, type: 'error' });
-    } finally {
-        setIsLoading(false);
-        console.log("[TradingInterface][setIsLoading] set to FALSE (handleSell)");
-    }
-};
+        setIsLoading(true);
+        console.log("[TradingInterface][setIsLoading] set to TRUE (handleBuy)");
+        setErrorMessage('');
+        setNotification({ show: true, message: `Processing buy on ${network}...`, type: 'info' });
+
+        try {
+            let txSignature: string;
+            const amountInLamports = new BN(new Decimal(buyAmountSOLFloat).mul(1e9).toFixed(0));
+
+            if (network === 'mainnet-beta') {
+                const priorityFee = await getOptimalPriorityFee(connection);
+                txSignature = await executeJupiterSwap({
+                    wallet,
+                    connection,
+                    inputMint: NATIVE_MINT,
+                    outputMint: new PublicKey(tokenAddress),
+                    amount: amountInLamports,
+                    slippageBps: slippage * 100,
+                    priorityFeeMicroLamports: priorityFee,
+                    asLegacyTransaction: true,
+                });
+            } else { // Devnet Logic
+                if (!selectedPool || !selectedPool.id) throw new Error("Devnet pool not selected.");
+                const slippageDecimal = slippage / 100;
+                txSignature = await swapRaydiumTokens(wallet, connection, selectedPool.id, NATIVE_MINT.toBase58(), amountInLamports, slippageDecimal);
+                let tokensBought = 0;
+                let solSpent = buyAmountSOLFloat;
+                if (jupiterQuote && jupiterQuote.outAmount) {
+                    tokensBought = parseFloat(new Decimal(jupiterQuote.outAmount)
+                        .div(new Decimal(10).pow(tokenDecimals)).toString());
+                    if (jupiterQuote.inAmount) {
+                        solSpent = parseFloat(new Decimal(jupiterQuote.inAmount)
+                            .div(1e9).toString());
+                    }
+                } else if (currentPrice > 0) {
+                    tokensBought = buyAmountSOLFloat / currentPrice;
+                }
+
+                updateSimulatedPoolAfterTrade(-tokensBought, solSpent);
+            }
+
+            setNotification({ show: true, message: `Buy successful!`, type: 'success' });
+            setBuyAmount('');
+            await refreshBalances();
+
+        } catch (error: any) {
+            console.error(`[handleBuy] Error:`, error);
+            setErrorMessage(`Buy Failed: ${error.message}`);
+            setNotification({ show: true, message: `Buy Failed: ${error.message.substring(0, 100)}`, type: 'error' });
+        } finally {
+            setIsLoading(false);
+            console.log("[TradingInterface][setIsLoading] set to FALSE (handleBuy)");
+        }
+    };
+
+    const handleSell = async () => {
+        if (!wallet?.publicKey || !isPoolSelected) {
+            setErrorMessage("Wallet not connected or no valid pool/route selected.");
+            return;
+        }
+        const sellAmountTokensFloat = parseFloat(sellAmount);
+        if (isNaN(sellAmountTokensFloat) || sellAmountTokensFloat <= 0) {
+            setErrorMessage("Please enter a valid token amount to sell");
+            return;
+        }
+        const rawTokenBalanceBN = new BN(tokenBalance);
+        const rawTokensToSell = new BN(new Decimal(sellAmountTokensFloat).mul(10 ** tokenDecimals).toFixed(0));
+        if (rawTokensToSell.gt(rawTokenBalanceBN)) {
+            setErrorMessage(`Not enough token balance.`);
+            return;
+        }
+
+        setIsLoading(true);
+        console.log("[TradingInterface][setIsLoading] set to TRUE (handleSell)");
+        setErrorMessage('');
+        setNotification({ show: true, message: `Processing sell on ${network}...`, type: 'info' });
+
+        try {
+            let txSignature: string;
+
+            if (network === 'mainnet-beta') {
+                const priorityFee = await getOptimalPriorityFee(connection);
+                txSignature = await executeJupiterSwap({
+                    wallet,
+                    connection,
+                    inputMint: new PublicKey(tokenAddress),
+                    outputMint: NATIVE_MINT,
+                    amount: rawTokensToSell,
+                    slippageBps: slippage * 100,
+                    priorityFeeMicroLamports: priorityFee,
+                    asLegacyTransaction: true,
+                });
+            } else { // Devnet Logic
+                if (!selectedPool || !selectedPool.id) throw new Error("Devnet pool not selected.");
+                const slippageDecimal = slippage / 100;
+                txSignature = await swapRaydiumTokens(wallet, connection, selectedPool.id, tokenAddress, rawTokensToSell, slippageDecimal);
+                let tokensSold = sellAmountTokensFloat;
+                let solReceived = 0;
+                if (jupiterQuote && jupiterQuote.outAmount) {
+                    solReceived = parseFloat(new Decimal(jupiterQuote.outAmount)
+                        .div(1e9).toString());
+                    if (jupiterQuote.inAmount) {
+                        tokensSold = parseFloat(new Decimal(jupiterQuote.inAmount)
+                            .div(new Decimal(10).pow(tokenDecimals)).toString());
+                    }
+                } else {
+                    solReceived = currentPrice * sellAmountTokensFloat;
+                }
+
+                updateSimulatedPoolAfterTrade(tokensSold, -solReceived);
+            }
+
+            setNotification({ show: true, message: 'Sell successful!', type: 'success' });
+            setSellAmount('');
+            await refreshBalances();
+
+        } catch (error: any) {
+            console.error(`[handleSell] Error:`, error);
+            setErrorMessage(`Sell Error: ${error.message}`);
+            setNotification({ show: true, message: `Sell Failed: ${error.message.substring(0, 100)}`, type: 'error' });
+        } finally {
+            setIsLoading(false);
+            console.log("[TradingInterface][setIsLoading] set to FALSE (handleSell)");
+        }
+    };
 
     let priceToDisplay = network === 'mainnet-beta' ? priceInSol : currentPrice;
     const displayPriceString = typeof priceToDisplay === 'number' && priceToDisplay > 0
@@ -403,52 +435,52 @@ const handleSell = async () => {
                 />
             </div>
 
-        {selectedPool && (
-            <div className="p-3 mb-4 bg-blue-900/30 border border-blue-700/50 rounded-lg">
-                <div className="flex">
-                    <div className="text-blue-500 mr-2 text-lg">ⓘ</div>
-                    <div className="text-blue-300 text-sm">
-                        <p>
-                            Trading against selected Raydium pool{" "}
-                            <span className="font-mono text-xs">{selectedPool.id.substring(0, 6)}...</span> on {network}.
+            {selectedPool && (
+                <div className="p-3 mb-4 bg-blue-900/30 border border-blue-700/50 rounded-lg">
+                    <div className="flex">
+                        <div className="text-blue-500 mr-2 text-lg">ⓘ</div>
+                        <div className="text-blue-300 text-sm">
+                            <p>
+                                Trading against selected Raydium pool{" "}
+                                <span className="font-mono text-xs">{selectedPool.id.substring(0, 6)}...</span> on {network}.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {activeTab === 'buy' && (
+                <div className="space-y-4 flex-grow flex flex-col">
+                    <div>
+                        <label htmlFor="buy-amount-input" className="block text-gray-400 text-sm mb-1">SOL Amount to Spend</label>
+                        <input
+                            id="buy-amount-input"
+                            type="number"
+                            value={buyAmount}
+                            onChange={(e) => setBuyAmount(e.target.value)}
+                            className="w-full p-2 rounded bg-gray-800 text-white border border-gray-700 focus:border-blue-500 focus:outline-none"
+                            placeholder="Enter SOL amount"
+                            step="any"
+                            min="0"
+                        />
+                        <p className="text-gray-500 text-xs mt-1">
+                            Available: {solBalance?.toFixed(6) ?? '0.00'}
                         </p>
                     </div>
-                </div>
-            </div>
-        )}
-
-        {activeTab === 'buy' && (
-            <div className="space-y-4 flex-grow flex flex-col">
-                <div>
-                    <label htmlFor="buy-amount-input" className="block text-gray-400 text-sm mb-1">SOL Amount to Spend</label>
-                    <input
-                        id="buy-amount-input"
-                        type="number"
-                        value={buyAmount}
-                        onChange={(e) => setBuyAmount(e.target.value)}
-                        className="w-full p-2 rounded bg-gray-800 text-white border border-gray-700 focus:border-blue-500 focus:outline-none"
-                        placeholder="Enter SOL amount"
-                        step="any"
-                        min="0"
-                    />
-                    <p className="text-gray-500 text-xs mt-1">
-                        Available: {solBalance?.toFixed(6) ?? '0.00'}
-                    </p>
-                </div>
-                <div className="bg-gray-800 p-3 rounded-lg space-y-2 text-sm">
-                    <div className="flex justify-between">
-                        <span className="text-gray-400">Tokens Received:</span>
-                        <span className="text-white">
-                            {jupiterQuote ? new Decimal(jupiterQuote.outAmount).div(10 ** tokenDecimals).toFixed(6) : '0.00'}
-                        </span>
+                    <div className="bg-gray-800 p-3 rounded-lg space-y-2 text-sm">
+                        <div className="flex justify-between">
+                            <span className="text-gray-400">Tokens Received:</span>
+                            <span className="text-white">
+                                {jupiterQuote ? new Decimal(jupiterQuote.outAmount).div(10 ** tokenDecimals).toFixed(6) : '0.00'}
+                            </span>
+                        </div>
+                        <div className="flex justify-between">
+                            <span className="text-gray-400">Price Impact:</span>
+                            <span className={`font-medium ${jupiterQuote && jupiterQuote.priceImpactPct * 100 > 5 ? 'text-red-400' : jupiterQuote && jupiterQuote.priceImpactPct * 100 > 1 ? 'text-yellow-400' : 'text-green-400'}`}>
+                                {jupiterQuote ? `${(jupiterQuote.priceImpactPct * 100).toFixed(4)}%` : '0.00%'}
+                            </span>
+                        </div>
                     </div>
-                    <div className="flex justify-between">
-                        <span className="text-gray-400">Price Impact:</span>
-                        <span className={`font-medium ${jupiterQuote && jupiterQuote.priceImpactPct * 100 > 5 ? 'text-red-400' : jupiterQuote && jupiterQuote.priceImpactPct * 100 > 1 ? 'text-yellow-400' : 'text-green-400'}`}>
-                            {jupiterQuote ? `${(jupiterQuote.priceImpactPct * 100).toFixed(4)}%` : '0.00%'}
-                        </span>
-                    </div>
-                </div>
                     <button
                         onClick={handleBuy}
                         disabled={
@@ -458,51 +490,51 @@ const handleSell = async () => {
                             !wallet?.publicKey
                         }
                         className={`w-full py-3 mt-auto rounded-lg font-bold transition-colors ${isLoading || !wallet?.publicKey
-                                ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
-                                : !buyAmount || parseFloat(buyAmount) <= 0
-                                    ? 'bg-green-800 text-gray-500 cursor-not-allowed'
-                                    : 'bg-green-600 hover:bg-green-700 text-white'
+                            ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
+                            : !buyAmount || parseFloat(buyAmount) <= 0
+                                ? 'bg-green-800 text-gray-500 cursor-not-allowed'
+                                : 'bg-green-600 hover:bg-green-700 text-white'
                             }`}
                     >
                         {isLoading ? "Processing..." : "Buy Token"}
                     </button>
 
                 </div>
-        )}
+            )}
 
-        {activeTab === 'sell' && (
-            <div className="space-y-4 flex-grow flex flex-col">
-                <div>
-                    <label htmlFor="sell-amount-input" className="block text-gray-400 text-sm mb-1">Token Amount to Sell</label>
-                    <input
-                        id="sell-amount-input"
-                        type="number"
-                        value={sellAmount}
-                        onChange={(e) => setSellAmount(e.target.value)}
-                        className="w-full p-2 rounded bg-gray-800 text-white border border-gray-700 focus:border-blue-500 focus:outline-none"
-                        placeholder="Enter token amount"
-                        step="any"
-                        min="0"
-                    />
-                    <p className="text-gray-500 text-xs mt-1">
-                        Available: {tokenBalance && typeof tokenDecimals === 'number' ? new Decimal(tokenBalance).div(10 ** tokenDecimals).toDP(tokenDecimals).toString() : '0'}
-                    </p>
-                </div>
-                <div className="bg-gray-800 p-3 rounded-lg space-y-2 text-sm">
-                    <div className="flex justify-between">
-                        <span className="text-gray-400">SOL Received:</span>
-                        <span className="text-white">
-                            {activeTab === 'sell' && jupiterQuote ? new Decimal(jupiterQuote.outAmount).div(10 ** 9).toFixed(6) : '0.00'}
-                        </span>
+            {activeTab === 'sell' && (
+                <div className="space-y-4 flex-grow flex flex-col">
+                    <div>
+                        <label htmlFor="sell-amount-input" className="block text-gray-400 text-sm mb-1">Token Amount to Sell</label>
+                        <input
+                            id="sell-amount-input"
+                            type="number"
+                            value={sellAmount}
+                            onChange={(e) => setSellAmount(e.target.value)}
+                            className="w-full p-2 rounded bg-gray-800 text-white border border-gray-700 focus:border-blue-500 focus:outline-none"
+                            placeholder="Enter token amount"
+                            step="any"
+                            min="0"
+                        />
+                        <p className="text-gray-500 text-xs mt-1">
+                            Available: {tokenBalance && typeof tokenDecimals === 'number' ? new Decimal(tokenBalance).div(10 ** tokenDecimals).toDP(tokenDecimals).toString() : '0'}
+                        </p>
                     </div>
-                    <div className="flex justify-between">
-                        <span className="text-gray-400">Price Impact:</span>
-                        <span className={`font-medium ${activeTab === 'sell' && jupiterQuote && jupiterQuote.priceImpactPct * 100 > 5 ? 'text-red-400' : activeTab === 'sell' && jupiterQuote && jupiterQuote.priceImpactPct * 100 > 1 ? 'text-yellow-400' : 'text-green-400'}`}>
-                            {activeTab === 'sell' && jupiterQuote ? `${(jupiterQuote.priceImpactPct * 100).toFixed(4)}%` : '0.00%'}
-                        </span>
+                    <div className="bg-gray-800 p-3 rounded-lg space-y-2 text-sm">
+                        <div className="flex justify-between">
+                            <span className="text-gray-400">SOL Received:</span>
+                            <span className="text-white">
+                                {activeTab === 'sell' && jupiterQuote ? new Decimal(jupiterQuote.outAmount).div(10 ** 9).toFixed(6) : '0.00'}
+                            </span>
+                        </div>
+                        <div className="flex justify-between">
+                            <span className="text-gray-400">Price Impact:</span>
+                            <span className={`font-medium ${activeTab === 'sell' && jupiterQuote && jupiterQuote.priceImpactPct * 100 > 5 ? 'text-red-400' : activeTab === 'sell' && jupiterQuote && jupiterQuote.priceImpactPct * 100 > 1 ? 'text-yellow-400' : 'text-green-400'}`}>
+                                {activeTab === 'sell' && jupiterQuote ? `${(jupiterQuote.priceImpactPct * 100).toFixed(4)}%` : '0.00%'}
+                            </span>
+                        </div>
                     </div>
-                </div>
-                <button
+                    <button
                         onClick={handleSell}
                         disabled={
                             isLoading ||
@@ -511,10 +543,10 @@ const handleSell = async () => {
                             !wallet?.publicKey
                         }
                         className={`w-full py-3 mt-auto rounded-lg font-bold transition-colors ${isLoading || !wallet?.publicKey
-                                ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
-                                : !sellAmount || parseFloat(sellAmount) <= 0
-                                    ? 'bg-red-800 text-gray-500 cursor-not-allowed'
-                                    : 'bg-red-600 hover:bg-red-700 text-white'
+                            ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
+                            : !sellAmount || parseFloat(sellAmount) <= 0
+                                ? 'bg-red-800 text-gray-500 cursor-not-allowed'
+                                : 'bg-red-600 hover:bg-red-700 text-white'
                             }`}
                     >
                         {isLoading ? "Processing..." : "Sell Token"}
@@ -522,7 +554,7 @@ const handleSell = async () => {
 
                 </div>
             )}
-    </div>
-);
+        </div>
+    );
 }
 export default TradingInterface;
