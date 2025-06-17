@@ -708,8 +708,6 @@ export const swapRaydiumTokens = async (
             await new Promise(resolve => setTimeout(resolve, 5000));
             try {
                 console.log('[vXX Log Step 11] Calling unwrapWsol function...');
-                const unwrapTxId = await unwrapWsol(wallet, connection);
-                console.log(`[vXX Log Step 11] ✅ WSOL Unwrap Transaction Sent! TxID: ${unwrapTxId}`);
             } catch (unwrapError) {
                 console.error(`[vXX Log Step 11] ❌ Failed to unwrap WSOL after sell swap!`, unwrapError);
             }
