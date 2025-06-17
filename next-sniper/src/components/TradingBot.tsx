@@ -2,8 +2,14 @@
 
 import { useNetwork } from '@/context/NetworkContext';
 import { LAMPORTS_PER_SOL, PublicKey } from '@solana/web3.js';
-import { getAssociatedTokenAddress, getAccount } from '@solana/spl-token';
+import { getAssociatedTokenAddress, getAccount, NATIVE_MINT } from '@solana/spl-token';
 import React, { useState, useEffect, useCallback } from 'react';
+import BN from 'bn.js';
+import Decimal from 'decimal.js';
+import { executeJupiterSwap } from '@/utils/jupiterSwapUtil';
+import { getOptimalPriorityFee } from '@/utils/priorityFee';
+import { getSimulatedPool } from '@/utils/simulatedPoolStore';
+import { calculateStandardAmmSwapQuote } from '@/utils/ammSwapCalculator';
 // The props interface now accepts all properties from the parent.
 interface TradingBotProps {
     botPublicKeyString: string;
@@ -26,7 +32,7 @@ export default function TradingBot({
     onWithdraw,
     onWithdrawToken
 }: TradingBotProps) {
-    const { connection } = useNetwork();
+    const { connection, network } = useNetwork();
     const [solBalance, setSolBalance] = useState(0);
     const [tokenBalance, setTokenBalance] = useState(0);
     const [isRefreshing, setIsRefreshing] = useState(false);
@@ -41,6 +47,16 @@ export default function TradingBot({
     const [withdrawSolAddress, setWithdrawSolAddress] = useState('');
     const [withdrawTokenAmount, setWithdrawTokenAmount] = useState('');
     const [withdrawTokenAddress, setWithdrawTokenAddress] = useState('');
+
+    // Manual trade form state
+    const [buyAmount, setBuyAmount] = useState('');
+    const [sellAmount, setSellAmount] = useState('');
+    const [slippage, setSlippage] = useState(1);
+    const [priorityFee, setPriorityFee] = useState('');
+    const [recommendedPriorityFee, setRecommendedPriorityFee] = useState<number | null>(null);
+    const [tokenDecimals, setTokenDecimals] = useState(0);
+    const [buyQuote, setBuyQuote] = useState<any>(null);
+    const [sellQuote, setSellQuote] = useState<any>(null);
 
     const addLog = useCallback((message: string) => {
         console.log(`[TRADING BOT LOG] ${message}`);
@@ -67,13 +83,16 @@ export default function TradingBot({
                     const decimals = (tokenInfo.value?.data as any)?.parsed?.info?.decimals ?? 0;
                     const balance = Number(accountInfo.amount) / Math.pow(10, decimals);
                     setTokenBalance(balance);
+                    setTokenDecimals(decimals);
                     addLog(`Balances: ${sol.toFixed(4)} SOL, ${balance.toFixed(4)} Tokens`);
                 } catch (e) {
                     setTokenBalance(0);
+                    setTokenDecimals(0);
                     addLog(`Balances: ${sol.toFixed(4)} SOL, 0.0000 Tokens (no account found)`);
                 }
             } else {
                 setTokenBalance(0);
+                setTokenDecimals(0);
                 addLog(`Balances: ${sol.toFixed(4)} SOL (no token selected)`);
             }
         } catch (error) {
@@ -86,15 +105,123 @@ export default function TradingBot({
 
     useEffect(() => {
         refreshBotBalances();
-        
+
     }, [refreshBotBalances]);
+
+    // Quote for manual buy
+    useEffect(() => {
+        const amount = parseFloat(buyAmount);
+        if (!tokenMintAddress || isNaN(amount) || amount <= 0) { setBuyQuote(null); return; }
+        const handler = setTimeout(async () => {
+            try {
+                if (network === 'mainnet-beta') {
+                    const quote = await executeJupiterSwap({
+                        wallet: { publicKey: new PublicKey(botPublicKeyString) },
+                        connection,
+                        inputMint: NATIVE_MINT,
+                        outputMint: new PublicKey(tokenMintAddress),
+                        amount: new BN(new Decimal(amount).mul(1e9).toFixed(0)),
+                        slippageBps: slippage * 100,
+                        onlyGetQuote: true,
+                    });
+                    setBuyQuote({
+                        outAmount: new Decimal(quote.outAmount).div(new Decimal(10).pow(tokenDecimals)).toNumber(),
+                        minOut: new Decimal(quote.otherAmountThreshold).div(new Decimal(10).pow(tokenDecimals)).toNumber(),
+                        priceImpact: quote.priceImpactPct * 100,
+                    });
+                } else {
+                    const pool = getSimulatedPool();
+                    if (!pool) { setBuyQuote(null); return; }
+                    const q = calculateStandardAmmSwapQuote(amount, true, {
+                        priceFromPool: pool.price,
+                        uiSolReserve: pool.solAmount,
+                        uiTokenReserve: pool.tokenAmount,
+                        solMintAddress: NATIVE_MINT.toBase58(),
+                        solDecimals: 9,
+                        pairedTokenMintAddress: pool.tokenAddress,
+                        pairedTokenDecimals: pool.tokenDecimals || 0,
+                    }, slippage);
+                    if (q) {
+                        setBuyQuote({
+                            outAmount: q.estimatedOutputUi.toNumber(),
+                            minOut: new Decimal(q.minAmountOutRaw.toString()).div(new Decimal(10).pow(pool.tokenDecimals || 0)).toNumber(),
+                            priceImpact: q.priceImpactPercent.toNumber(),
+                        });
+                    } else {
+                        setBuyQuote(null);
+                    }
+                }
+            } catch (e) {
+                console.error('Buy quote error', e); setBuyQuote(null);
+            }
+        }, 300);
+        return () => clearTimeout(handler);
+    }, [buyAmount, slippage, tokenMintAddress, tokenDecimals, network, connection, botPublicKeyString]);
+
+    // Quote for manual sell
+    useEffect(() => {
+        const amount = parseFloat(sellAmount);
+        if (!tokenMintAddress || isNaN(amount) || amount <= 0) { setSellQuote(null); return; }
+        const handler = setTimeout(async () => {
+            try {
+                if (network === 'mainnet-beta') {
+                    const quote = await executeJupiterSwap({
+                        wallet: { publicKey: new PublicKey(botPublicKeyString) },
+                        connection,
+                        inputMint: new PublicKey(tokenMintAddress),
+                        outputMint: NATIVE_MINT,
+                        amount: new BN(new Decimal(amount).mul(new Decimal(10).pow(tokenDecimals)).toFixed(0)),
+                        slippageBps: slippage * 100,
+                        onlyGetQuote: true,
+                    });
+                    setSellQuote({
+                        outAmount: new Decimal(quote.outAmount).div(1e9).toNumber(),
+                        minOut: new Decimal(quote.otherAmountThreshold).div(1e9).toNumber(),
+                        priceImpact: quote.priceImpactPct * 100,
+                    });
+                } else {
+                    const pool = getSimulatedPool();
+                    if (!pool) { setSellQuote(null); return; }
+                    const q = calculateStandardAmmSwapQuote(amount, false, {
+                        priceFromPool: pool.price,
+                        uiSolReserve: pool.solAmount,
+                        uiTokenReserve: pool.tokenAmount,
+                        solMintAddress: NATIVE_MINT.toBase58(),
+                        solDecimals: 9,
+                        pairedTokenMintAddress: pool.tokenAddress,
+                        pairedTokenDecimals: pool.tokenDecimals || 0,
+                    }, slippage);
+                    if (q) {
+                        setSellQuote({
+                            outAmount: q.estimatedOutputUi.toNumber(),
+                            minOut: new Decimal(q.minAmountOutRaw.toString()).div(new Decimal(10).pow(9)).toNumber(),
+                            priceImpact: q.priceImpactPercent.toNumber(),
+                        });
+                    } else {
+                        setSellQuote(null);
+                    }
+                }
+            } catch (e) {
+                console.error('Sell quote error', e); setSellQuote(null);
+            }
+        }, 300);
+        return () => clearTimeout(handler);
+    }, [sellAmount, slippage, tokenMintAddress, tokenDecimals, network, connection, botPublicKeyString]);
+    useEffect(() => {
+        async function fetchPriority() {
+            const fee = await getOptimalPriorityFee(connection);
+            setRecommendedPriorityFee(fee);
+            setPriorityFee(String(fee));
+        }
+        fetchPriority();
+    }, [connection]);
 
     const handleFundClick = async () => {
         const amountStr = prompt("Enter amount of SOL to fund the bot:", "0.1");
         if (!amountStr) return;
         const amount = parseFloat(amountStr);
         if (isNaN(amount) || amount <= 0) return alert("Invalid amount.");
-        
+
         setIsProcessing(true);
         addLog(`Funding with ${amount} SOL...`);
         try {
@@ -127,7 +254,7 @@ export default function TradingBot({
             setIsProcessing(false);
         }
     };
-    
+
     const handleWithdrawTokenClick = async () => {
         const amount = parseFloat(withdrawTokenAmount);
         if (isNaN(amount) || amount <= 0 || !withdrawTokenAddress || !tokenMintAddress) return addLog('Invalid amount, address, or token for withdrawal.');
@@ -160,7 +287,7 @@ export default function TradingBot({
                     <p className="text-sm text-gray-400">Bot SOL Balance</p>
                     <p className="text-xl font-bold text-white">{solBalance.toFixed(4)}</p>
                 </div>
-                 <div className="bg-gray-800 p-3 rounded-lg">
+                <div className="bg-gray-800 p-3 rounded-lg">
                     <p className="text-sm text-gray-400">Bot Token Balance</p>
                     <p className="text-xl font-bold text-white">{tokenBalance.toFixed(4)}</p>
                 </div>
@@ -171,24 +298,56 @@ export default function TradingBot({
                 </div>
             </div>
 
-            {/* The summary bar for Token and LP Active has been removed from here; now shown in BotManager only */}
-
             <div className="bg-gray-800 p-4 rounded-lg">
                 <div className="flex items-center justify-between">
                     <h4 className={`font-bold transition-colors ${isLogicEnabled ? 'text-green-400' : 'text-gray-200'}`}>
                         {isLogicEnabled ? 'Automated Logic is ON' : 'Automated Logic is OFF'}
                     </h4>
                 </div>
-                {!isLogicEnabled && (
-                    <div className="mt-4 pt-4 border-t border-gray-700 grid grid-cols-2 gap-4">
-                         <button disabled={isProcessing} className="w-full px-4 py-2 bg-green-700 hover:bg-green-600 rounded transition text-white font-semibold disabled:bg-gray-500">Manual Buy</button>
-                         <button disabled={isProcessing} className="w-full px-4 py-2 bg-red-700 hover:bg-red-600 rounded transition text-white font-semibold disabled:bg-gray-500">Manual Sell</button>
-                    </div>
-                )}
             </div>
-            
+
+            {!isLogicEnabled && (
+                <div className="bg-gray-800 p-4 rounded-lg space-y-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-gray-400 text-sm mb-1">Buy Amount (SOL)</label>
+                            <input type="number" value={buyAmount} onChange={e => setBuyAmount(e.target.value)} className="w-full p-2 bg-gray-700 border border-gray-600 rounded text-white" step="any" min="0" />
+                            <p className="text-gray-500 text-xs mt-1">Available: <span className="cursor-pointer hover:underline" onClick={() => setBuyAmount(solBalance.toFixed(6))}>{solBalance.toFixed(6)}</span></p>
+                            <div className="bg-gray-700 p-2 rounded mt-2 space-y-1 text-sm">
+                                <div className="flex justify-between"><span className="text-gray-400">Min Tokens Out:</span><span className="text-white">{buyQuote ? buyQuote.minOut.toFixed(6) : '0.000000'}</span></div>
+                                <div className="flex justify-between"><span className="text-gray-400">Price Impact:</span><span className={`font-medium ${buyQuote && buyQuote.priceImpact > 5 ? 'text-red-400' : buyQuote && buyQuote.priceImpact > 1 ? 'text-yellow-400' : 'text-green-400'}`}>{buyQuote ? `${buyQuote.priceImpact.toFixed(4)}%` : '0.00%'}</span></div>
+                            </div>
+                        </div>
+                        <div>
+                            <label className="block text-gray-400 text-sm mb-1">Sell Amount (Token)</label>
+                            <input type="number" value={sellAmount} onChange={e => setSellAmount(e.target.value)} className="w-full p-2 bg-gray-700 border border-gray-600 rounded text-white" step="any" min="0" />
+                            <p className="text-gray-500 text-xs mt-1">Available: <span className="cursor-pointer hover:underline" onClick={() => setSellAmount(tokenBalance.toFixed(6))}>{tokenBalance.toFixed(6)}</span></p>
+                            <div className="bg-gray-700 p-2 rounded mt-2 space-y-1 text-sm">
+                                <div className="flex justify-between"><span className="text-gray-400">Min SOL Out:</span><span className="text-white">{sellQuote ? sellQuote.minOut.toFixed(6) : '0.000000'}</span></div>
+                                <div className="flex justify-between"><span className="text-gray-400">Price Impact:</span><span className={`font-medium ${sellQuote && sellQuote.priceImpact > 5 ? 'text-red-400' : sellQuote && sellQuote.priceImpact > 1 ? 'text-yellow-400' : 'text-green-400'}`}>{sellQuote ? `${sellQuote.priceImpact.toFixed(4)}%` : '0.00%'}</span></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-gray-400 text-sm mb-1">Slippage (%)</label>
+                            <input type="number" value={slippage} onChange={e => setSlippage(parseFloat(e.target.value) || 0)} className="w-full p-2 bg-gray-700 border border-gray-600 rounded text-white" step="0.1" min="0" />
+                        </div>
+                        <div>
+                            <label className="block text-gray-400 text-sm mb-1">Priority Fee (μ-lamports)</label>
+                            <input type="number" value={priorityFee} onChange={e => setPriorityFee(e.target.value)} className="w-full p-2 bg-gray-700 border border-gray-600 rounded text-white" step="1" min="0" />
+                            {recommendedPriorityFee !== null && <p className="text-gray-500 text-xs mt-1">Suggested: <span className="cursor-pointer hover:underline" onClick={() => setPriorityFee(String(recommendedPriorityFee))}>{recommendedPriorityFee}</span></p>}
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4 pt-2 border-t border-gray-700">
+                        <button disabled={isProcessing} className="w-full px-4 py-2 bg-green-700 hover:bg-green-600 rounded transition text-white font-semibold disabled:bg-gray-500">Buy</button>
+                        <button disabled={isProcessing} className="w-full px-4 py-2 bg-red-700 hover:bg-red-600 rounded transition text-white font-semibold disabled:bg-gray-500">Sell</button>
+                    </div>
+                </div>
+            )}
+
             <div className="bg-gray-800 p-4 rounded-lg">
-                 <button onClick={() => setIsWithdrawVisible(!isWithdrawVisible)} className='w-full text-left font-bold text-gray-200'>
+                <button onClick={() => setIsWithdrawVisible(!isWithdrawVisible)} className='w-full text-left font-bold text-gray-200'>
                     <h4 className='flex justify-between items-center'>
                         <span>Fund / Withdraw</span>
                         <span className={`transition-transform transform ${isWithdrawVisible ? 'rotate-180' : ''}`}>▼</span>
@@ -197,17 +356,17 @@ export default function TradingBot({
                 {isWithdrawVisible && (
                     <div className="mt-4 pt-4 border-t border-gray-700 grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div className="space-y-3">
-                             <h4 className='font-bold text-gray-200 text-sm'>Fund Bot</h4>
+                            <h4 className='font-bold text-gray-200 text-sm'>Fund Bot</h4>
                             <button onClick={handleFundClick} disabled={isProcessing} className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded transition text-white font-semibold disabled:bg-gray-500">Fund with SOL</button>
                         </div>
-                         <div className="space-y-3">
+                        <div className="space-y-3">
                             <h4 className='font-bold text-gray-200 text-sm'>Withdraw SOL</h4>
                             <input type="text" placeholder="Recipient Address" value={withdrawSolAddress} onChange={(e) => setWithdrawSolAddress(e.target.value)} className="w-full p-2 bg-gray-700 border border-gray-600 rounded text-white" disabled={isProcessing} />
                             <input type="number" placeholder="SOL Amount" value={withdrawSolAmount} onChange={(e) => setWithdrawSolAmount(e.target.value)} className="w-full p-2 bg-gray-700 border border-gray-600 rounded" disabled={isProcessing} />
                             <button onClick={handleWithdrawSolClick} disabled={isProcessing} className="w-full px-4 py-2 bg-green-600 hover:bg-green-700 rounded transition text-white disabled:bg-gray-500">Withdraw SOL</button>
                         </div>
-                         <div className="space-y-3 md:col-span-2">
-                             <h4 className='font-bold text-gray-200 text-sm'>Withdraw Tokens</h4>
+                        <div className="space-y-3 md:col-span-2">
+                            <h4 className='font-bold text-gray-200 text-sm'>Withdraw Tokens</h4>
                             <input type="text" placeholder="Recipient Address" value={withdrawTokenAddress} onChange={(e) => setWithdrawTokenAddress(e.target.value)} className="w-full p-2 bg-gray-700 border border-gray-600 rounded text-white" disabled={isProcessing || !tokenMintAddress} />
                             <input type="number" placeholder="Token Amount" value={withdrawTokenAmount} onChange={(e) => setWithdrawTokenAmount(e.target.value)} className="w-full p-2 bg-gray-700 border border-gray-600 rounded" disabled={isProcessing || !tokenMintAddress} />
                             <button onClick={handleWithdrawTokenClick} disabled={isProcessing || !tokenMintAddress} className="w-full px-4 py-2 bg-green-600 hover:bg-green-700 rounded transition text-white disabled:bg-gray-500">Withdraw Tokens</button>
@@ -215,7 +374,7 @@ export default function TradingBot({
                     </div>
                 )}
             </div>
-            
+
             <div>
                 <h4 className="font-bold text-gray-300 mb-2">Logs</h4>
                 <div className="bg-black p-3 rounded-lg h-48 overflow-y-auto font-mono text-xs text-gray-400 space-y-1 custom-scrollbar">
@@ -225,3 +384,4 @@ export default function TradingBot({
         </div>
     );
 }
+
