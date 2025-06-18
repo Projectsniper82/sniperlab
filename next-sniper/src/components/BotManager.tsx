@@ -59,6 +59,7 @@ export default function BotManager({ isLogicEnabled, selectedTokenAddress, isLpA
 
     const handleClearBotWallets = () => {
         if (window.confirm("Are you sure? This will permanently delete all bot wallets for this network.")) {
+            botWallets.forEach(w => removeBot(w.publicKey.toBase58()));
             clearBotWallets(network);
             setBotWallets([]);
         }
