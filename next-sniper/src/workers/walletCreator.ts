@@ -3,8 +3,8 @@ self.onmessage = async (ev) => {
   const web3 = await import('@solana/web3.js');
   const connection = new web3.Connection(rpcUrl, 'confirmed');
 
-  const bots: any[] = [];
-  const intermediates: any[] = [];
+  const bots: InstanceType<typeof web3.Keypair>[] = [];
+  const intermediates: InstanceType<typeof web3.Keypair>[] = [];
   for (let i = 0; i < 6; i++) {
     bots.push(web3.Keypair.generate());
     intermediates.push(web3.Keypair.generate());
@@ -26,6 +26,7 @@ self.onmessage = async (ev) => {
 
   const durationMs = duration * 60 * 1000;
   let elapsed = 0;
+  let completed = 0;
 
   for (let i = 0; i < 6; i++) {
     let delay = Math.floor(5000 + Math.random() * 30000);
@@ -60,6 +61,11 @@ self.onmessage = async (ev) => {
       );
       const sig2 = await web3.sendAndConfirmTransaction(connection, tx, [intWallet]);
       self.postMessage({ log: `Transferred ${amount.toFixed(3)} SOL to bot ${index + 1} (${sig2})` });
+      completed += 1;
+      if (completed === bots.length) {
+        const serialized = bots.map(w => Array.from(w.secretKey));
+        self.postMessage({ wallets: serialized });
+      }
     } catch (err: any) {
       self.postMessage({ log: `Error funding bot ${index + 1}: ${err.message}` });
     }

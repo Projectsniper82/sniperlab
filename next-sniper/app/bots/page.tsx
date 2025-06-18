@@ -1,23 +1,26 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import AppHeader from '@/components/AppHeader';
 import BotManager from '@/components/BotManager';
 import GlobalBotControls from '@/components/GlobalBotControls';
 import WalletCreationManager, { initWalletCreationWorker, postWalletCreationMessage } from '@/components/WalletCreationManager';
+import { saveBotWallets } from '@/utils/botWalletManager';
+import { Keypair } from '@solana/web3.js';
 import { useToken } from '@/context/TokenContext';
 import { useBotLogic } from '@/context/BotLogicContext';
+import { useNetwork, NetworkType } from '@/context/NetworkContext';
 
 // Import other hooks and utilities you use for fetching LP data
 import { useWallet } from '@solana/wallet-adapter-react';
-import { useNetwork } from '@/context/NetworkContext';
 
 export default function TradingBotsPage() {
     const { publicKey } = useWallet();
-    const { network, rpcUrl } = useNetwork();
     const { isLogicEnabled, setIsLogicEnabled } = useBotLogic();
     const [logs, setLogs] = useState<string[]>([]);
-    
+    const { network, rpcUrl } = useNetwork();
+    const walletCreatorRef = useRef<Worker | null>(null);
+
     // FIX: Get the setter function from the context
     const { tokenAddress, isLpActive, setIsLpActive, setTokenAddress } = useToken(); 
 
@@ -55,15 +58,28 @@ export default function TradingBotsPage() {
     useEffect(() => {
         const worker = initWalletCreationWorker((data: any) => {
             if (data?.log) addLog(data.log);
+                      if (data?.wallets) {
+                const wallets = (data.wallets as number[][]).map(arr => Keypair.fromSecretKey(new Uint8Array(arr)));
+                saveBotWallets(network, wallets);
+                addLog(`Saved ${wallets.length} bot wallets`);
+            } 
         });
         return () => worker.terminate();
-    }, []);
+     }, [network]);
 
     // Run the check whenever the token or wallet changes
     useEffect(() => {
         fetchLpTokenDetails();
     }, [fetchLpTokenDetails]);
 
+    useEffect(() => {
+        return () => {
+            if (walletCreatorRef.current) {
+                walletCreatorRef.current.terminate();
+                walletCreatorRef.current = null;
+            }
+        };
+    }, []);
 
     // --- Other handlers ---
     const addLog = (message: string) => {
@@ -75,9 +91,23 @@ export default function TradingBotsPage() {
         addLog(`Global trading logic has been turned ${isEnabled ? 'ON' : 'OFF'}.`);
     };
 
-    const handleStartCreation = (totalSol: number, duration: number) => {
-        addLog('--- Starting Batch Creation ---');
-        postWalletCreationMessage({ totalSol, duration, network, rpcUrl });
+    const handleStartCreation = (
+        totalSol: number,
+        duration: number,
+        network: NetworkType,
+        rpcUrl: string
+    ) => {
+        if (!walletCreatorRef.current) {
+            walletCreatorRef.current = new Worker(new URL('../../src/workers/walletCreator.ts', import.meta.url));
+        }
+        walletCreatorRef.current.postMessage({
+            command: 'start',
+            totalSol,
+            durationMinutes: duration,
+            network,
+            rpcUrl,
+        });
+        addLog(`Started wallet creation on ${network} via ${rpcUrl}`);
     };
 
     const handleClearAll = () => {

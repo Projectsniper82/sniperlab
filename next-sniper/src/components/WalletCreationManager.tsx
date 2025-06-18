@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { useNetwork } from '@/context/NetworkContext';
+import { useNetwork, NetworkType } from '@/context/NetworkContext';
 import { clearBotWallet, loadBotWallet } from '@/utils/botWalletManager';
 import { TOKEN_PROGRAM_ID } from '@solana/spl-token';
 
@@ -49,7 +49,12 @@ const NumberInputStepper = ({ label, value, onChange, step, min, unit, helpText 
 };
 
 interface WalletCreationManagerProps {
-    onStartCreation: (totalSol: number, durationMinutes: number) => void;
+      onStartCreation: (
+        totalSol: number,
+        durationMinutes: number,
+        network: NetworkType,
+        rpcUrl: string
+    ) => void;
     onClearWallets: () => void;
     isProcessing: boolean;
 }
@@ -58,7 +63,7 @@ export default function WalletCreationManager({ onStartCreation, onClearWallets,
     const [isExpanded, setIsExpanded] = useState(true);
     const [totalSol, setTotalSol] = useState('0.6');
     const [duration, setDuration] = useState('30');
-    const { connection, network } = useNetwork();
+    const { connection, network, rpcUrl } = useNetwork();
     const [showConfirmModal, setShowConfirmModal] = useState(false);
 
     const confirmAndClearCurrentWallet = () => {
@@ -96,7 +101,7 @@ export default function WalletCreationManager({ onStartCreation, onClearWallets,
             alert("Please enter a valid duration in minutes.");
             return;
         }
-        onStartCreation(solAmount, durationMinutes); 
+        onStartCreation(solAmount, durationMinutes, network, rpcUrl);
     };
 
     return (

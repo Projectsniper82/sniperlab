@@ -12,8 +12,14 @@ export function generateBotWallet(): Keypair {
 }
 
 // Utilities for a single wallet are kept for backwards compatibility but the new
-// implementation focuses on handling multiple wallets.  The storage key now uses
-// the plural form `bot-wallets-${network}`.
+// implementation focuses on handling multiple wallets. The storage key now uses
+// the plural form `bot-wallets-${network}` and is normalized so mainnet-beta is
+// stored under `bot-wallets-mainnet`.
+
+const storageKey = (network: NetworkType) => {
+    const net = network === 'devnet' ? 'devnet' : 'mainnet';
+    return `bot-wallets-${net}`;
+};
 
 export function generateBotWallets(count: number): Keypair[] {
     return Array.from({ length: count }, () => generateBotWallet());
@@ -25,7 +31,7 @@ export async function saveBotWallets(network: NetworkType, keypairs: Keypair[]):
         const encryptedKeys = keypairs.map(kp => {
             return Array.from(kp.secretKey).map((byte, idx) => byte ^ password.charCodeAt(idx % password.length));
         });
-        localStorage.setItem(`bot-wallets-${network}`, JSON.stringify(encryptedKeys));
+        localStorage.setItem(storageKey(network), JSON.stringify(encryptedKeys));
         console.log(`[BotWalletManager] Saved ${keypairs.length} bot wallet(s) for ${network} to localStorage.`);
     } catch (error) {
         console.error(`[BotWalletManager] Failed to save wallets for ${network}:`, error);
@@ -35,7 +41,7 @@ export async function saveBotWallets(network: NetworkType, keypairs: Keypair[]):
 
 export function loadBotWallets(network: NetworkType): Keypair[] {
     try {
-        const stored = localStorage.getItem(`bot-wallets-${network}`);
+         const stored = localStorage.getItem(storageKey(network));
         if (!stored) return [];
         const encrypted: number[][] = JSON.parse(stored);
         const password = getEncryptionPassword();
@@ -54,7 +60,7 @@ export function loadBotWallets(network: NetworkType): Keypair[] {
 }
 
 export function clearBotWallets(network: NetworkType): void {
-    localStorage.removeItem(`bot-wallets-${network}`);
+     localStorage.removeItem(storageKey(network));
     console.log(`[BotWalletManager] Cleared bot wallets for ${network}.`);
 }
 
