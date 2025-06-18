@@ -23,6 +23,7 @@ interface BotManagerProps {
 export default function BotManager({ isLogicEnabled, selectedTokenAddress, isLpActive }: BotManagerProps) {
     const { connection, network } = useNetwork();
     const { publicKey: userPublicKey, sendTransaction } = useWallet();
+    const { addBot, removeBot, startBot, stopBot } = useBotService();
     const [botWallets, setBotWallets] = useState<Keypair[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
@@ -32,6 +33,20 @@ export default function BotManager({ isLogicEnabled, selectedTokenAddress, isLpA
         setBotWallets(loaded);
         setIsLoading(false);
     }, [network]);
+
+    useEffect(() => {
+        botWallets.forEach(w => addBot(w));
+        return () => {
+            botWallets.forEach(w => removeBot(w.publicKey.toBase58()));
+        };
+    }, [botWallets, addBot, removeBot]);
+
+    useEffect(() => {
+        botWallets.forEach(w => {
+            const id = w.publicKey.toBase58();
+            if (isLogicEnabled) startBot(id); else stopBot(id);
+        });
+    }, [isLogicEnabled, botWallets, startBot, stopBot]);
 
     const handleCreateBotWallet = () => {
         const newWallet = generateBotWallet();

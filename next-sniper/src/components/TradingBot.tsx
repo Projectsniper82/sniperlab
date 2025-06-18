@@ -12,6 +12,7 @@ import { getSimulatedPool, updateSimulatedPoolAfterTrade } from '@/utils/simulat
 import { calculateStandardAmmSwapQuote } from '@/utils/ammSwapCalculator';
 import { swapRaydiumTokens } from '@/utils/raydiumSdkAdapter';
 import { createWalletAdapter } from '@/utils/walletAdapter';
+import { useBotService } from '@/context/BotServiceContext';
 // The props interface now accepts all properties from the parent.
 interface TradingBotProps {
     botWallet: Keypair;
@@ -37,12 +38,12 @@ export default function TradingBot({
     onWithdrawToken
 }: TradingBotProps) {
     const { connection, network } = useNetwork();
+    const { getLogs, log } = useBotService();
     const [solBalance, setSolBalance] = useState(0);
     const [tokenBalance, setTokenBalance] = useState(0);
     const [isRefreshing, setIsRefreshing] = useState(false);
-    const [logs, setLogs] = useState<string[]>(['Initializing bot...']);
     const [isProcessing, setIsProcessing] = useState(false);
-
+    const logs = getLogs(botPublicKeyString);
     // UI State
     const [isWithdrawVisible, setIsWithdrawVisible] = useState(false);
 
@@ -64,8 +65,8 @@ export default function TradingBot({
 
     const addLog = useCallback((message: string) => {
         console.log(`[TRADING BOT LOG] ${message}`);
-        setLogs(prev => [`${new Date().toLocaleTimeString()}: ${message}`, ...prev.slice(0, 99)]);
-    }, []);
+        log(botPublicKeyString, message);
+    }, [log, botPublicKeyString]);
 
     const refreshBotBalances = useCallback(async () => {
         // This guard prevents multiple refreshes from running at the same time
@@ -479,7 +480,9 @@ export default function TradingBot({
             <div>
                 <h4 className="font-bold text-gray-300 mb-2">Logs</h4>
                 <div className="bg-black p-3 rounded-lg h-48 overflow-y-auto font-mono text-xs text-gray-400 space-y-1 custom-scrollbar">
-                    {logs.map((log, i) => <p key={i}><span className="text-gray-600 mr-2">{'>'}</span>{log}</p>)}
+                    {logs.map((entry, i) => (
+                        <p key={i}><span className="text-gray-600 mr-2">{'>'}</span>{new Date(entry.timestamp).toLocaleTimeString()}: {entry.message}</p>
+                    ))}
                 </div>
             </div>
         </div>
