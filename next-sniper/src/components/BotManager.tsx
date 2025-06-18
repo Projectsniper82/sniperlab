@@ -12,8 +12,10 @@ import {
     loadBotWallets,
     clearBotWallets,
 } from '@/utils/botWalletManager';
+import { useBotService } from '@/context/BotServiceContext';
 
 // Define the props the BotManager will accept from the page
+
 interface BotManagerProps {
     isLogicEnabled: boolean;
     selectedTokenAddress: string;
