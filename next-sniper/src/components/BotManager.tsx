@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Keypair, SystemProgram, Transaction, LAMPORTS_PER_SOL, PublicKey, sendAndConfirmTransaction } from '@solana/web3.js';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { useNetwork } from '@/context/NetworkContext';
-import { getOrCreateAssociatedTokenAccount, createTransferInstruction } from '@solana/spl-token';
+import { getOrCreateAssociatedTokenAccount, createTransferInstruction, TOKEN_PROGRAM_ID } from '@solana/spl-token';
 import TradingBot from './TradingBot';
 import {
     generateBotWallet,
@@ -29,6 +29,7 @@ export default function BotManager({ selectedTokenAddress, isLpActive }: BotMana
     const { isLogicEnabled } = useBotLogic();
     const [botWallets, setBotWallets] = useState<Keypair[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [showConfirmModal, setShowConfirmModal] = useState(false);
 
     useEffect(() => {
         setIsLoading(true);
@@ -55,11 +56,28 @@ export default function BotManager({ selectedTokenAddress, isLpActive }: BotMana
         setBotWallets(updated);
     };
 
-    const handleClearBotWallets = () => {
+        const confirmAndClearWallets = () => {
+        botWallets.forEach(w => removeBot(w.publicKey.toBase58()));
+        clearBotWallets(network);
+        setBotWallets([]);
+        setShowConfirmModal(false);
+    };
+
+    const handleClearBotWallets = async () => {
+        let hasBalance = false;
+        for (const w of botWallets) {
+            const sol = await connection.getBalance(w.publicKey);
+            if (sol > 0) { hasBalance = true; break; }
+            const tokens = await connection.getParsedTokenAccountsByOwner(w.publicKey, { programId: TOKEN_PROGRAM_ID });
+            const nonZero = tokens.value.some(t => (t.account.data as any).parsed.info.tokenAmount.uiAmount > 0);
+            if (nonZero) { hasBalance = true; break; }
+        }
+        if (hasBalance) {
+            setShowConfirmModal(true);
+            return;
+        }
         if (window.confirm("Are you sure? This will permanently delete all bot wallets for this network.")) {
-            botWallets.forEach(w => removeBot(w.publicKey.toBase58()));
-            clearBotWallets(network);
-            setBotWallets([]);
+               confirmAndClearWallets();
         }
     };
 
@@ -118,58 +136,71 @@ export default function BotManager({ selectedTokenAddress, isLpActive }: BotMana
     }
 
     return (
-        <div className="max-w-4xl mx-auto">
-            <div className="bg-gray-800 p-4 rounded-lg border border-gray-700 mb-6">
-                <h2 className="text-xl font-bold text-white mb-3">
-                    Bot Wallet Management ({network})
-                </h2>
-                <div className='flex items-center justify-between'>
-                    <div className="space-y-1">
-                        <p className="text-sm text-gray-300">
-                            Token:
-                            <span className="font-mono text-xs text-white ml-1 break-all">{selectedTokenAddress || 'N/A'}</span>
-                        </p>
-                        <p className="text-sm text-gray-300">
-                            LP Active:
-                            <span className={`ml-1 font-bold ${isLpActive ? 'text-green-400' : 'text-red-400'}`}>{isLpActive ? 'Yes' : 'No'}</span>
-                        </p>
-                        <p className="text-sm text-green-400">
-                            {botWallets.length > 0 ? `${botWallets.length} wallet(s) loaded.` : `No bot wallets found for ${network}.`}
-                        </p>
-                    </div>
-                    <div className='space-x-2'>
-                        <button onClick={handleCreateBotWallet} className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded">
-                            Add Wallet
-                        </button>
-                        {botWallets.length > 0 && (
-                            <button onClick={handleClearBotWallets} className="px-3 py-1 bg-red-800 hover:bg-red-700 text-white text-xs font-bold rounded">
-                                Clear All
+        <>
+            <div className="max-w-4xl mx-auto">
+                <div className="bg-gray-800 p-4 rounded-lg border border-gray-700 mb-6">
+                    <h2 className="text-xl font-bold text-white mb-3">
+                        Bot Wallet Management ({network})
+                    </h2>
+                    <div className='flex items-center justify-between'>
+                        <div className="space-y-1">
+                            <p className="text-sm text-gray-300">
+                                Token:
+                                <span className="font-mono text-xs text-white ml-1 break-all">{selectedTokenAddress || 'N/A'}</span>
+                            </p>
+                            <p className="text-sm text-gray-300">
+                                LP Active:
+                                <span className={`ml-1 font-bold ${isLpActive ? 'text-green-400' : 'text-red-400'}`}>{isLpActive ? 'Yes' : 'No'}</span>
+                            </p>
+                            <p className="text-sm text-green-400">
+                                {botWallets.length > 0 ? `${botWallets.length} wallet(s) loaded.` : `No bot wallets found for ${network}.`}
+                            </p>
+                        </div>
+                        <div className='space-x-2'>
+                            <button onClick={handleCreateBotWallet} className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded">
+                                Add Wallet
                             </button>
-                        )}
+                            {botWallets.length > 0 && (
+                                <button onClick={handleClearBotWallets} className="px-3 py-1 bg-red-800 hover:bg-red-700 text-white text-xs font-bold rounded">
+                                    Clear All
+                                </button>
+                            )}
+                        </div>
                     </div>
                 </div>
-            </div>
 
-            {botWallets.length > 0 ? (
-                botWallets.map(wallet => (
-                    <TradingBot
-                        key={wallet.publicKey.toBase58()}
-                        botWallet={wallet}
-                        botPublicKeyString={wallet.publicKey.toBase58()}
-                        onFund={createFundHandler(wallet)}
-                        onWithdraw={createWithdrawHandler(wallet)}
-                        onWithdrawToken={createWithdrawTokenHandler(wallet)}
-                        tokenMintAddress={selectedTokenAddress}
-                        isLogicEnabled={isLogicEnabled}
-                        selectedTokenAddress={selectedTokenAddress}
-                        isLpActive={isLpActive}
-                    />
-                ))
-            ) : (
-                <div className="text-center py-10 bg-gray-800 rounded-lg">
-                    <p className="text-gray-400">Create a bot wallet to begin trading.</p>
+                {botWallets.length > 0 ? (
+                    botWallets.map(wallet => (
+                        <TradingBot
+                            key={wallet.publicKey.toBase58()}
+                            botWallet={wallet}
+                            botPublicKeyString={wallet.publicKey.toBase58()}
+                            onFund={createFundHandler(wallet)}
+                            onWithdraw={createWithdrawHandler(wallet)}
+                            onWithdrawToken={createWithdrawTokenHandler(wallet)}
+                            tokenMintAddress={selectedTokenAddress}
+                            isLogicEnabled={isLogicEnabled}
+                            selectedTokenAddress={selectedTokenAddress}
+                            isLpActive={isLpActive}
+                        />
+                    ))
+                ) : (
+                    <div className="text-center py-10 bg-gray-800 rounded-lg">
+                        <p className="text-gray-400">Create a bot wallet to begin trading.</p>
+                    </div>
+                )}
+            </div>
+            {showConfirmModal && (
+                <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
+                    <div className="bg-gray-800 p-6 rounded-lg text-center space-y-4">
+                        <p className="text-white">Some bot wallets still hold SOL or tokens. Withdraw funds before deleting. Continue anyway?</p>
+                        <div className="space-x-2">
+                            <button onClick={() => setShowConfirmModal(false)} className="px-3 py-1 bg-gray-700 text-white rounded">Cancel</button>
+                            <button onClick={confirmAndClearWallets} className="px-3 py-1 bg-red-800 text-white rounded">Delete</button>
+                        </div>
+                    </div>
                 </div>
             )}
-        </div>
+        </>
     );
 }
