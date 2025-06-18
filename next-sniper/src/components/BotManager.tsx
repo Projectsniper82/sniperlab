@@ -13,19 +13,20 @@ import {
     clearBotWallets,
 } from '@/utils/botWalletManager';
 import { useBotService } from '@/context/BotServiceContext';
+import { useBotLogic } from '@/context/BotLogicContext';
 
 // Define the props the BotManager will accept from the page
 
 interface BotManagerProps {
-    isLogicEnabled: boolean;
     selectedTokenAddress: string;
     isLpActive: boolean;
 }
 
-export default function BotManager({ isLogicEnabled, selectedTokenAddress, isLpActive }: BotManagerProps) {
+export default function BotManager({ selectedTokenAddress, isLpActive }: BotManagerProps) {
     const { connection, network } = useNetwork();
     const { publicKey: userPublicKey, sendTransaction } = useWallet();
     const { addBot, removeBot, startBot, stopBot } = useBotService();
+    const { isLogicEnabled } = useBotLogic();
     const [botWallets, setBotWallets] = useState<Keypair[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
@@ -38,10 +39,7 @@ export default function BotManager({ isLogicEnabled, selectedTokenAddress, isLpA
 
     useEffect(() => {
         botWallets.forEach(w => addBot(w));
-        return () => {
-            botWallets.forEach(w => removeBot(w.publicKey.toBase58()));
-        };
-    }, [botWallets, addBot, removeBot]);
+    }, [botWallets, addBot]);
 
     useEffect(() => {
         botWallets.forEach(w => {

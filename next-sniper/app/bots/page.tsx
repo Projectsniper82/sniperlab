@@ -1,18 +1,20 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react'; // Added useEffect and useCallback
+import React, { useState, useEffect, useCallback } from 'react';
 import AppHeader from '@/components/AppHeader';
 import BotManager from '@/components/BotManager';
 import GlobalBotControls from '@/components/GlobalBotControls';
 import WalletCreationManager from '@/components/WalletCreationManager';
 import { useToken } from '@/context/TokenContext';
+import { useBotLogic } from '@/context/BotLogicContext';
+
 // Import other hooks and utilities you use for fetching LP data
 import { useWallet } from '@solana/wallet-adapter-react';
 
 
 export default function TradingBotsPage() {
     const { publicKey } = useWallet();
-    const [isLogicEnabled, setIsLogicEnabled] = useState(false);
+    const { isLogicEnabled, setIsLogicEnabled } = useBotLogic();
     const [logs, setLogs] = useState<string[]>([]);
     
     // FIX: Get the setter function from the context
@@ -97,9 +99,8 @@ export default function TradingBotsPage() {
                 </div>
 
                 <BotManager
-                    isLogicEnabled={isLogicEnabled}
                     selectedTokenAddress={tokenAddress}
-                    isLpActive={isLpActive} // This will now correctly reflect the state
+                    isLpActive={isLpActive}
                 />
             </main>
         </div>
