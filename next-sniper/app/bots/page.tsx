@@ -4,16 +4,17 @@ import React, { useState, useEffect, useCallback } from 'react';
 import AppHeader from '@/components/AppHeader';
 import BotManager from '@/components/BotManager';
 import GlobalBotControls from '@/components/GlobalBotControls';
-import WalletCreationManager from '@/components/WalletCreationManager';
+import WalletCreationManager, { initWalletCreationWorker, postWalletCreationMessage } from '@/components/WalletCreationManager';
 import { useToken } from '@/context/TokenContext';
 import { useBotLogic } from '@/context/BotLogicContext';
 
 // Import other hooks and utilities you use for fetching LP data
 import { useWallet } from '@solana/wallet-adapter-react';
-
+import { useNetwork } from '@/context/NetworkContext';
 
 export default function TradingBotsPage() {
     const { publicKey } = useWallet();
+    const { network, rpcUrl } = useNetwork();
     const { isLogicEnabled, setIsLogicEnabled } = useBotLogic();
     const [logs, setLogs] = useState<string[]>([]);
     
@@ -50,6 +51,14 @@ export default function TradingBotsPage() {
 
     }, [tokenAddress, publicKey, setIsLpActive]);
 
+        // Initialize worker for wallet creation logs
+    useEffect(() => {
+        const worker = initWalletCreationWorker((data: any) => {
+            if (data?.log) addLog(data.log);
+        });
+        return () => worker.terminate();
+    }, []);
+
     // Run the check whenever the token or wallet changes
     useEffect(() => {
         fetchLpTokenDetails();
@@ -66,10 +75,11 @@ export default function TradingBotsPage() {
         addLog(`Global trading logic has been turned ${isEnabled ? 'ON' : 'OFF'}.`);
     };
 
-    const handleStartCreation = (totalSol: number) => {
-        addLog('--- Starting Batch Creation Simulation ---');
+    const handleStartCreation = (totalSol: number, duration: number) => {
+        addLog('--- Starting Batch Creation ---');
+        postWalletCreationMessage({ totalSol, duration, network, rpcUrl });
     };
-    
+
     const handleClearAll = () => {
         addLog("Simulation: Clear all wallets.");
     };
@@ -82,7 +92,6 @@ export default function TradingBotsPage() {
                     <GlobalBotControls 
                         isLogicEnabled={isLogicEnabled}
                         onToggleLogic={handleToggleLogic}
-                        botCount={0}
                     />
                     <WalletCreationManager 
                         onStartCreation={handleStartCreation}

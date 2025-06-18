@@ -5,6 +5,21 @@ import { useNetwork } from '@/context/NetworkContext';
 import { clearBotWallet, loadBotWallet } from '@/utils/botWalletManager';
 import { TOKEN_PROGRAM_ID } from '@solana/spl-token';
 
+let walletWorker: Worker | null = null;
+
+export function initWalletCreationWorker(onMessage: (data: any) => void): Worker {
+    if (!walletWorker) {
+        walletWorker = new Worker(new URL('../workers/walletCreator.ts', import.meta.url));
+    }
+    walletWorker.onmessage = (ev) => onMessage(ev.data);
+    return walletWorker;
+}
+
+export function postWalletCreationMessage(params: { totalSol: number; duration: number; network: string; rpcUrl: string }) {
+    if (!walletWorker) throw new Error('Worker not initialized');
+    walletWorker.postMessage(params);
+}
+
 const NumberInputStepper = ({ label, value, onChange, step, min, unit, helpText }: { label:string, value:string, onChange:(v:string)=>void, step:number, min:number, unit:string, helpText:string }) => {
     const handleStep = (direction: 'up' | 'down') => {
         const currentValue = parseFloat(value) || 0;
