@@ -4,7 +4,7 @@ import React, { useEffect, useCallback, useRef, useState } from 'react';
 import AppHeader from '@/components/AppHeader';
 import BotManager from '@/components/BotManager';
 import GlobalBotControls from '@/components/GlobalBotControls';
-import WalletCreationManager, { initWalletCreationWorker } from '@/components/WalletCreationManager';
+import WalletCreationManager, { initWalletCreationWorker, postWalletCreationMessage } from '@/components/WalletCreationManager';
 import { saveBotWallets } from '@/utils/botWalletManager';
 import { Keypair, LAMPORTS_PER_SOL, SystemProgram, Transaction } from '@solana/web3.js';
 import { useToken } from '@/context/TokenContext';
@@ -59,7 +59,7 @@ export default function TradingBotsPage() {
 
     // Initialize worker for wallet creation logs
 useEffect(() => {
-    const worker = initWalletCreationWorker((data: any) => {
+    walletCreatorRef.current = initWalletCreationWorker((data: any) => {
         if (data?.log) addLog(data.log);
         if (data?.wallets) {
             const { trading, intermediates } = data.wallets as { trading: number[][]; intermediates: number[][] };
@@ -75,22 +75,18 @@ useEffect(() => {
             }
         }
     });
-    return () => worker.terminate();
+       return () => {
+        if (walletCreatorRef.current) {
+            walletCreatorRef.current.terminate();
+            walletCreatorRef.current = null;
+        }
+    };
 }, [network, publicKey, sendTransaction, connection]);
 
     // Run the check whenever the token or wallet changes
     useEffect(() => {
         fetchLpTokenDetails();
     }, [fetchLpTokenDetails]);
-
-    useEffect(() => {
-        return () => {
-            if (walletCreatorRef.current) {
-                walletCreatorRef.current.terminate();
-                walletCreatorRef.current = null;
-            }
-        };
-    }, []);
 
     // --- Other handlers ---
     const addLog = (message: string) => {
@@ -110,16 +106,7 @@ useEffect(() => {
     ) => {
         setCreationState('processing');
         creationParamsRef.current = { totalSol, durationMinutes: duration };
-        if (!walletCreatorRef.current) {
-            walletCreatorRef.current = new Worker(new URL('../../src/workers/walletCreator.ts', import.meta.url));
-        }
-        walletCreatorRef.current.postMessage({
-            command: 'start',
-            totalSol,
-            durationMinutes: duration,
-            network,
-            rpcUrl,
-        });
+        postWalletCreationMessage({ totalSol, duration, network, rpcUrl });
         addLog(`Started wallet creation on ${network} via ${rpcUrl}`);
     };
 
@@ -127,7 +114,7 @@ useEffect(() => {
         addLog("Simulation: Clear all wallets.");
     };
 
-       const distributeFunds = (
+    const distributeFunds = (
         tradingWallets: Keypair[],
         intermediateWallets: Keypair[],
         totalSol: number,
