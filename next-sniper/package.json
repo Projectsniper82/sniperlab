@@ -7,7 +7,10 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test:findpool": "tsx --env-file=.env.local scripts/findPoolTest.ts"
+    "test:findpool": "tsx --env-file=.env.local scripts/findPoolTest.ts",
+    "build:worker": "tsc -p tsconfig.worker.json",
+    "predev": "npm run build:worker",
+    "prebuild": "npm run build:worker"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.31.1",

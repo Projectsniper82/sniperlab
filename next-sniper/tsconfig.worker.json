@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "noEmitOnError": false,
+    "outDir": "./public/workers",
+    "module": "es2020",
+    "target": "es2020",
+    "lib": ["es2020", "webworker"],
+    "skipLibCheck": true
+  },
+  "include": ["src/workers/walletCreator.ts"]
+}
