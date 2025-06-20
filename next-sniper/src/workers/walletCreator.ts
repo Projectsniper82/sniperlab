@@ -32,10 +32,11 @@ self.onmessage = async (ev) => {
 
     self.postMessage({ wallets: serialized });
     console.log('[walletCreator] Posted generated wallets');
-   } catch (err: any) { // Add ': any' to explicitly cast err to any
+   } catch (err: any) {
     console.error('[walletCreator] Error during wallet creation', err);
-    // You can safely access .message after casting to `any`
-    self.postMessage({ error: err.message });
+     const msg = err?.message || 'Unknown error';
+    self.postMessage({ log: `[walletCreator] Error during wallet creation: ${msg}` });
+    self.postMessage({ error: msg });
   }
 };
 
