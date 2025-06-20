@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useCallback, useRef } from 'react';
+import React, { useEffect, useCallback, useRef, useState } from 'react';
 import AppHeader from '@/components/AppHeader';
 import BotManager from '@/components/BotManager';
 import GlobalBotControls from '@/components/GlobalBotControls';
@@ -22,6 +22,7 @@ export default function TradingBotsPage() {
     const { network, rpcUrl, connection } = useNetwork();
     const walletCreatorRef = useRef<Worker | null>(null);
     const creationParamsRef = useRef<{ totalSol: number; durationMinutes: number } | null>(null);
+    const [creationState, setCreationState] = useState<'idle' | 'processing'>('idle');
 
     // FIX: Get the setter function from the context
     const { tokenAddress, isLpActive, setIsLpActive, setTokenAddress } = useToken();
@@ -70,11 +71,12 @@ useEffect(() => {
                 distributeFunds(tradingWallets, intermediateWallets, creationParamsRef.current.totalSol, creationParamsRef.current.durationMinutes);
             } else {
                 addLog('Missing creation params or main wallet connection.');
+                setCreationState('idle');
             }
-            }
-        });
-        return () => worker.terminate();
-    }, [network, publicKey, sendTransaction, connection]);
+        }
+    });
+    return () => worker.terminate();
+}, [network, publicKey, sendTransaction, connection]);
 
     // Run the check whenever the token or wallet changes
     useEffect(() => {
@@ -106,6 +108,7 @@ useEffect(() => {
         network: NetworkType,
         rpcUrl: string
     ) => {
+        setCreationState('processing');
         creationParamsRef.current = { totalSol, durationMinutes: duration };
         if (!walletCreatorRef.current) {
             walletCreatorRef.current = new Worker(new URL('../../src/workers/walletCreator.ts', import.meta.url));
@@ -149,6 +152,7 @@ useEffect(() => {
                 const required = totalSol * LAMPORTS_PER_SOL;
                 if (balance < required) {
                     addLog('Insufficient balance to fund wallets.');
+                    setCreationState('idle');
                     return;
                 }
 
@@ -177,9 +181,11 @@ useEffect(() => {
                 if (i === tradingWallets.length - 1) {
                     saveBotWallets(network, tradingWallets);
                     addLog(`Saved ${tradingWallets.length} trading wallets`);
+                    setCreationState('idle'); 
                 }
             } catch (err: any) {
                 addLog(`Error funding wallet ${i + 1}: ${err.message}`);
+                setCreationState('idle');
             }
         };
 
@@ -201,7 +207,7 @@ useEffect(() => {
                     <WalletCreationManager
                         onStartCreation={handleStartCreation}
                         onClearWallets={handleClearAll}
-                        isProcessing={false}
+                        isProcessing={creationState === 'processing'}
                     />
                 </div>
 

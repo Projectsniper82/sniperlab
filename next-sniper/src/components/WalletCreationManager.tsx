@@ -146,12 +146,19 @@ export default function WalletCreationManager({ onStartCreation, onClearWallets,
                                 helpText="For random creation."
                             />
                         </div>
-                        <button 
-                            onClick={handleCreateClick} 
+                       <button
+                            onClick={handleCreateClick}
                             disabled={isProcessing}
                             className="w-full py-3 bg-purple-600 hover:bg-purple-500 rounded-lg transition text-white font-semibold shadow-md disabled:bg-gray-500 disabled:cursor-not-allowed"
                         >
-                            {isProcessing ? "Processing..." : "Start Batch Creation (6 Bots)"}
+                            {isProcessing ? (
+                                <span className="flex items-center justify-center">
+                                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                                    Processing...
+                                </span>
+                            ) : (
+                                "Start Batch Creation (6 Bots)"
+                            )}
                         </button>
                         <button
                             onClick={onClearWallets}
