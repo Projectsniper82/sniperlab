@@ -9,5 +9,8 @@
     "lib": ["es2020", "webworker"],
     "skipLibCheck": true
   },
-  "include": ["src/workers/walletCreator.ts"]
+ "include": [
+    "src/global.d.ts",
+    "src/workers/walletCreator.ts"
+  ]
 }

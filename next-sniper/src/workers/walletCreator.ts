@@ -14,8 +14,8 @@ self.onmessage = async (ev) => {
   // Cast to any to avoid Window vs WorkerGlobalScope type mismatch
   (globalThis as any).window = self as any;
     const web3 = await import(
-  'https://cdn.jsdelivr.net/npm/@solana/web3.js@1.98.2/lib/index.browser.esm.js'
-);
+    'https://cdn.jsdelivr.net/npm/@solana/web3.js@1.98.2/lib/index.browser.esm.js'
+  );
 
     const tradingWallets = [];
     const intermediateWallets = [];
