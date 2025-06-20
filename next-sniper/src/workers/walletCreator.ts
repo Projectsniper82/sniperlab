@@ -1,6 +1,13 @@
 console.log('[walletCreator] Worker script loaded');
 
-self.onmessage = async () => {
+self.onmessage = async (ev) => {
+  const { totalSol, duration, network, rpcUrl } = ev.data;
+  console.log('[walletCreator] Received params', {
+    totalSol,
+    duration,
+    network,
+    rpcUrl,
+  });
   console.log('[walletCreator] Start wallet generation');
   try {
     // Provide a window object for libraries expecting a browser environment
