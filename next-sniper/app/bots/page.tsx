@@ -6,7 +6,7 @@ import BotManager from '@/components/BotManager';
 import GlobalBotControls from '@/components/GlobalBotControls';
 import WalletCreationManager, { initWalletCreationWorker } from '@/components/WalletCreationManager';
 import { saveBotWallets } from '@/utils/botWalletManager';
-import { Keypair } from '@solana/web3.js';
+import { Keypair, LAMPORTS_PER_SOL, SystemProgram, Transaction } from '@solana/web3.js';
 import { useToken } from '@/context/TokenContext';
 import { useBotLogic } from '@/context/BotLogicContext';
 import { useNetwork, NetworkType } from '@/context/NetworkContext';
@@ -16,14 +16,15 @@ import { useGlobalLogs } from '@/context/GlobalLogContext';
 import { useWallet } from '@solana/wallet-adapter-react';
 
 export default function TradingBotsPage() {
-    const { publicKey } = useWallet();
+    const { publicKey, sendTransaction } = useWallet();
     const { isLogicEnabled, setIsLogicEnabled } = useBotLogic();
     const { logs, append } = useGlobalLogs();
-    const { network, rpcUrl } = useNetwork();
+    const { network, rpcUrl, connection } = useNetwork();
     const walletCreatorRef = useRef<Worker | null>(null);
+    const creationParamsRef = useRef<{ totalSol: number; durationMinutes: number } | null>(null);
 
     // FIX: Get the setter function from the context
-    const { tokenAddress, isLpActive, setIsLpActive, setTokenAddress } = useToken(); 
+    const { tokenAddress, isLpActive, setIsLpActive, setTokenAddress } = useToken();
 
     // --- Placeholder for your LP fetching logic ---
     // You likely have a more complex version of this.
@@ -35,7 +36,7 @@ export default function TradingBotsPage() {
         }
 
         console.log(`[DEBUG] Starting LP check for token: ${tokenAddress}`);
-        
+
         try {
             // SIMULATION of your fetching logic from the logs
             // Replace this with your actual implementation (e.g., call to Raydium SDK)
@@ -55,18 +56,25 @@ export default function TradingBotsPage() {
 
     }, [tokenAddress, publicKey, setIsLpActive]);
 
-        // Initialize worker for wallet creation logs
-    useEffect(() => {
-        const worker = initWalletCreationWorker((data: any) => {
-            if (data?.log) addLog(data.log);
-                      if (data?.wallets) {
-                const wallets = (data.wallets as number[][]).map(arr => Keypair.fromSecretKey(new Uint8Array(arr)));
-                saveBotWallets(network, wallets);
-                addLog(`Saved ${wallets.length} bot wallets`);
-            } 
+    // Initialize worker for wallet creation logs
+useEffect(() => {
+    const worker = initWalletCreationWorker((data: any) => {
+        if (data?.log) addLog(data.log);
+        if (data?.wallets) {
+            const { trading, intermediates } = data.wallets as { trading: number[][]; intermediates: number[][] };
+            const tradingWallets = trading.map(arr => Keypair.fromSecretKey(new Uint8Array(arr)));
+            const intermediateWallets = intermediates.map(arr => Keypair.fromSecretKey(new Uint8Array(arr)));
+            addLog(`Received ${tradingWallets.length} trading and ${intermediateWallets.length} intermediate wallets`);
+
+            if (creationParamsRef.current && publicKey) { // Removed `&& sendTransaction` as it's redundant
+                distributeFunds(tradingWallets, intermediateWallets, creationParamsRef.current.totalSol, creationParamsRef.current.durationMinutes);
+            } else {
+                addLog('Missing creation params or main wallet connection.');
+            }
+            }
         });
         return () => worker.terminate();
-     }, [network]);
+    }, [network, publicKey, sendTransaction, connection]);
 
     // Run the check whenever the token or wallet changes
     useEffect(() => {
@@ -84,7 +92,7 @@ export default function TradingBotsPage() {
 
     // --- Other handlers ---
     const addLog = (message: string) => {
-       append(message);
+        append(message);
     };
 
     const handleToggleLogic = (isEnabled: boolean) => {
@@ -98,6 +106,7 @@ export default function TradingBotsPage() {
         network: NetworkType,
         rpcUrl: string
     ) => {
+        creationParamsRef.current = { totalSol, durationMinutes: duration };
         if (!walletCreatorRef.current) {
             walletCreatorRef.current = new Worker(new URL('../../src/workers/walletCreator.ts', import.meta.url));
         }
@@ -115,25 +124,90 @@ export default function TradingBotsPage() {
         addLog("Simulation: Clear all wallets.");
     };
 
+       const distributeFunds = (
+        tradingWallets: Keypair[],
+        intermediateWallets: Keypair[],
+        totalSol: number,
+        durationMinutes: number
+    ) => {
+        const baseAmount = totalSol / tradingWallets.length;
+        const amounts = tradingWallets.map(() => baseAmount * (0.9 + Math.random() * 0.2));
+        const diff = totalSol - amounts.reduce((a, b) => a + b, 0);
+        amounts[amounts.length - 1] += diff;
+
+        const scheduleTimes: number[] = [];
+        const baseDelay = (durationMinutes * 60 * 1000) / tradingWallets.length;
+        for (let i = 0; i < tradingWallets.length; i++) {
+            scheduleTimes.push(baseDelay * i + Math.random() * baseDelay * 0.5);
+        }
+
+        const run = async (i: number) => {
+            const amount = amounts[i];
+            const lamports = Math.round(amount * LAMPORTS_PER_SOL);
+            try {
+                const balance = await connection.getBalance(publicKey!);
+                const required = totalSol * LAMPORTS_PER_SOL;
+                if (balance < required) {
+                    addLog('Insufficient balance to fund wallets.');
+                    return;
+                }
+
+                const tx1 = new Transaction().add(
+                    SystemProgram.transfer({
+                        fromPubkey: publicKey!,
+                        toPubkey: intermediateWallets[i].publicKey,
+                        lamports,
+                    })
+                );
+                const sig1 = await sendTransaction(tx1, connection);
+                await connection.confirmTransaction(sig1, 'confirmed');
+                addLog(`Funded intermediate ${intermediateWallets[i].publicKey.toBase58()} with ${amount.toFixed(4)} SOL`);
+
+                const tx2 = new Transaction().add(
+                    SystemProgram.transfer({
+                        fromPubkey: intermediateWallets[i].publicKey,
+                        toPubkey: tradingWallets[i].publicKey,
+                        lamports,
+                    })
+                );
+                const sig2 = await connection.sendTransaction(tx2, [intermediateWallets[i]]);
+                await connection.confirmTransaction(sig2, 'confirmed');
+                addLog(`Transferred ${amount.toFixed(4)} SOL to trading wallet ${tradingWallets[i].publicKey.toBase58()}`);
+
+                if (i === tradingWallets.length - 1) {
+                    saveBotWallets(network, tradingWallets);
+                    addLog(`Saved ${tradingWallets.length} trading wallets`);
+                }
+            } catch (err: any) {
+                addLog(`Error funding wallet ${i + 1}: ${err.message}`);
+            }
+        };
+
+        scheduleTimes.forEach((delay, i) => {
+            setTimeout(() => run(i), delay);
+        });
+    };
+
+
     return (
         <div className="p-4 sm:p-6 text-white bg-gray-950 min-h-screen font-sans">
             <AppHeader />
             <main className="max-w-7xl mx-auto mt-4 space-y-8">
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <GlobalBotControls 
+                    <GlobalBotControls
                         isLogicEnabled={isLogicEnabled}
                         onToggleLogic={handleToggleLogic}
                     />
-                    <WalletCreationManager 
+                    <WalletCreationManager
                         onStartCreation={handleStartCreation}
                         onClearWallets={handleClearAll}
                         isProcessing={false}
                     />
                 </div>
-                
+
                 <div>
-                     <h3 className="text-lg font-bold text-white mb-2">Global Action Logs</h3>
-                     <div className="bg-black p-3 rounded-lg h-32 overflow-y-auto font-mono text-xs text-gray-400 space-y-1 custom-scrollbar">
+                    <h3 className="text-lg font-bold text-white mb-2">Global Action Logs</h3>
+                    <div className="bg-black p-3 rounded-lg h-32 overflow-y-auto font-mono text-xs text-gray-400 space-y-1 custom-scrollbar">
                         {logs.length > 0 ? logs.map((log, i) => <p key={i}><span className="text-gray-600 mr-2">{'>'}</span>{log}</p>) : <p className="text-gray-500">No global actions yet.</p>}
                     </div>
                 </div>
