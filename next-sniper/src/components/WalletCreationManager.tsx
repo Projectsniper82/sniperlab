@@ -15,7 +15,10 @@ let walletWorker: Worker | null = null;
 
 export function initWalletCreationWorker(onMessage: (data: any) => void): Worker {
     if (!walletWorker) {
-        walletWorker = new Worker(new URL('../workers/walletCreator.ts', import.meta.url));
+         walletWorker = new Worker(
+            new URL('../workers/walletCreator.ts', import.meta.url),
+            { type: 'module' }
+        );
     }
     walletWorker.onmessage = (ev) => onMessage(ev.data);
     return walletWorker;
