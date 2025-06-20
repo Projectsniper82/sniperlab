@@ -17,7 +17,7 @@ export function initWalletCreationWorker(onMessage: (data: any) => void): Worker
     if (!walletWorker) {
                  try {
             console.log('[WalletCreationManager] Creating wallet worker');
-             walletWorker = new Worker('/workers/walletCreator.js', { type: 'module' });
+             walletWorker = new Worker(new URL('../workers/walletCreator.js', import.meta.url), { type: 'module' });
             console.log('[WalletCreationManager] Wallet worker created');
         } catch (err) {
             console.error('[WalletCreationManager] Failed to create worker', err);
