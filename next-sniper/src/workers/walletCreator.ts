@@ -1,5 +1,7 @@
 self.onmessage = async (ev) => {
   const { totalSol, duration, network, rpcUrl } = ev.data;
+  // Provide a window object for libraries expecting a browser environment
+  globalThis.window = self as any;
   const web3 = await import('@solana/web3.js');
   const connection = new web3.Connection(rpcUrl, 'confirmed');
 
@@ -45,9 +47,21 @@ self.onmessage = async (ev) => {
       self.postMessage({ log: `Funding bot ${index + 1} with ${amount.toFixed(3)} SOL` });
 
       if (network === 'devnet') {
-        const sig = await connection.requestAirdrop(intWallet.publicKey, amount * web3.LAMPORTS_PER_SOL);
-        await connection.confirmTransaction(sig, 'confirmed');
-        self.postMessage({ log: `Airdropped ${amount.toFixed(3)} SOL to intermediate ${index + 1}` });
+        let attempts = 0;
+        while (attempts < 3) {
+          try {
+            const sig = await connection.requestAirdrop(intWallet.publicKey, amount * web3.LAMPORTS_PER_SOL);
+            await connection.confirmTransaction(sig, 'confirmed');
+            self.postMessage({ log: `Airdropped ${amount.toFixed(3)} SOL to intermediate ${index + 1}` });
+            break;
+          } catch (err: any) {
+            attempts += 1;
+            if (attempts === 3) {
+              throw err;
+            }
+            await new Promise(res => setTimeout(res, 2000));
+          }
+        }
       } else {
         self.postMessage({ log: `Please send ${amount.toFixed(3)} SOL to ${intWallet.publicKey.toBase58()} from your wallet` });
       }
