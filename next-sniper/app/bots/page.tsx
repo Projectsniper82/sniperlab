@@ -67,6 +67,11 @@ useEffect(() => {
         walletCreatorRef.current = initWalletCreationWorker((data: any) => {
             console.log('[TradingBotsPage] Worker response', data);
             if (data?.log) addLog(data.log);
+            if (data?.error) {
+                addLog(`Worker error: ${data.error}`);
+                setCreationState('idle');
+                return;
+            }
             if (data?.wallets) {
                 const { trading, intermediates } = data.wallets as { trading: number[][]; intermediates: number[][] };
                 const tradingWallets = trading.map(arr => Keypair.fromSecretKey(new Uint8Array(arr)));

@@ -27,9 +27,13 @@ export function initWalletCreationWorker(onMessage: (data: any) => void): Worker
             throw err;
         }
     }
-      walletWorker.onmessage = (ev) => {
+     walletWorker.onmessage = (ev) => {
         console.log('[WalletCreationManager] Worker response received', ev.data);
         onMessage(ev.data);
+    };
+       walletWorker.onerror = (ev) => {
+        console.error('[WalletCreationManager] Worker error', ev);
+        onMessage({ error: ev.message });
     };
     return walletWorker;
 }
