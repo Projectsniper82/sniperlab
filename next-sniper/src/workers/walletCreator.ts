@@ -10,8 +10,9 @@ self.onmessage = async (ev) => {
   });
   console.log('[walletCreator] Start wallet generation');
   try {
-    // Provide a window object for libraries expecting a browser environment
-    globalThis.window = self;
+   // Provide a window object for libraries expecting a browser environment
+  // Cast to any to avoid Window vs WorkerGlobalScope type mismatch
+  (globalThis as any).window = self as any;
     const web3 = await import('@solana/web3.js');
 
     const tradingWallets = [];
