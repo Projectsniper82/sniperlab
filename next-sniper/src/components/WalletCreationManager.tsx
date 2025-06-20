@@ -44,6 +44,13 @@ export function postWalletCreationMessage(params: { totalSol: number; duration: 
     }
 }
 
+export function terminateWalletCreationWorker() {
+    if (walletWorker) {
+        walletWorker.terminate();
+        walletWorker = null;
+    }
+}
+
 const NumberInputStepper = ({ label, value, onChange, step, min, unit, helpText }: { label:string, value:string, onChange:(v:string)=>void, step:number, min:number, unit:string, helpText:string }) => {
     const handleStep = (direction: 'up' | 'down') => {
         const currentValue = parseFloat(value) || 0;

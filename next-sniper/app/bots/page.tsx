@@ -4,7 +4,11 @@ import React, { useEffect, useCallback, useRef, useState } from 'react';
 import AppHeader from '@/components/AppHeader';
 import BotManager from '@/components/BotManager';
 import GlobalBotControls from '@/components/GlobalBotControls';
-import WalletCreationManager, { initWalletCreationWorker, postWalletCreationMessage } from '@/components/WalletCreationManager';
+import WalletCreationManager, {
+    initWalletCreationWorker,
+    postWalletCreationMessage,
+    terminateWalletCreationWorker,
+} from '@/components/WalletCreationManager';
 import { saveBotWallets } from '@/utils/botWalletManager';
 import { Keypair, LAMPORTS_PER_SOL, SystemProgram, Transaction } from '@solana/web3.js';
 import { useToken } from '@/context/TokenContext';
@@ -82,10 +86,8 @@ useEffect(() => {
         console.error('[TradingBotsPage] Failed to initialize worker', err);
     }
     return () => {
-        if (walletCreatorRef.current) {
-            walletCreatorRef.current.terminate();
-            walletCreatorRef.current = null;
-        }
+         terminateWalletCreationWorker();
+        walletCreatorRef.current = null;
     };
 }, [network, publicKey, sendTransaction, connection]);
 
