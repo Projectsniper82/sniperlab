@@ -59,23 +59,29 @@ export default function TradingBotsPage() {
 
     // Initialize worker for wallet creation logs
 useEffect(() => {
-    walletCreatorRef.current = initWalletCreationWorker((data: any) => {
-        if (data?.log) addLog(data.log);
-        if (data?.wallets) {
-            const { trading, intermediates } = data.wallets as { trading: number[][]; intermediates: number[][] };
-            const tradingWallets = trading.map(arr => Keypair.fromSecretKey(new Uint8Array(arr)));
-            const intermediateWallets = intermediates.map(arr => Keypair.fromSecretKey(new Uint8Array(arr)));
-            addLog(`Received ${tradingWallets.length} trading and ${intermediateWallets.length} intermediate wallets`);
+     try {
+        walletCreatorRef.current = initWalletCreationWorker((data: any) => {
+            console.log('[TradingBotsPage] Worker response', data);
+            if (data?.log) addLog(data.log);
+            if (data?.wallets) {
+                const { trading, intermediates } = data.wallets as { trading: number[][]; intermediates: number[][] };
+                const tradingWallets = trading.map(arr => Keypair.fromSecretKey(new Uint8Array(arr)));
+                const intermediateWallets = intermediates.map(arr => Keypair.fromSecretKey(new Uint8Array(arr)));
+                addLog(`Received ${tradingWallets.length} trading and ${intermediateWallets.length} intermediate wallets`);
 
-            if (creationParamsRef.current && publicKey) { // Removed `&& sendTransaction` as it's redundant
-                distributeFunds(tradingWallets, intermediateWallets, creationParamsRef.current.totalSol, creationParamsRef.current.durationMinutes);
-            } else {
-                addLog('Missing creation params or main wallet connection.');
-                setCreationState('idle');
+                if (creationParamsRef.current && publicKey) {
+                    distributeFunds(tradingWallets, intermediateWallets, creationParamsRef.current.totalSol, creationParamsRef.current.durationMinutes);
+                } else {
+                    addLog('Missing creation params or main wallet connection.');
+                    setCreationState('idle');
+                }
             }
-        }
-    });
-       return () => {
+        });
+     
+    } catch (err) {
+        console.error('[TradingBotsPage] Failed to initialize worker', err);
+    }
+    return () => {
         if (walletCreatorRef.current) {
             walletCreatorRef.current.terminate();
             walletCreatorRef.current = null;
@@ -106,7 +112,12 @@ useEffect(() => {
     ) => {
         setCreationState('processing');
         creationParamsRef.current = { totalSol, durationMinutes: duration };
-        postWalletCreationMessage({ totalSol, duration, network, rpcUrl });
+            console.log('[TradingBotsPage] Sending creation message', { totalSol, duration, network, rpcUrl });
+        try {
+            postWalletCreationMessage({ totalSol, duration, network, rpcUrl });
+        } catch (err) {
+            console.error('[TradingBotsPage] Failed to post message to worker', err);
+        }
         addLog(`Started wallet creation on ${network} via ${rpcUrl}`);
     };
 

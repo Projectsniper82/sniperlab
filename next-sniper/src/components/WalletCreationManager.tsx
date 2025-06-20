@@ -15,18 +15,33 @@ let walletWorker: Worker | null = null;
 
 export function initWalletCreationWorker(onMessage: (data: any) => void): Worker {
     if (!walletWorker) {
-         walletWorker = new Worker(
-            new URL('../workers/walletCreator.ts', import.meta.url),
-            { type: 'module' }
-        );
+                 try {
+            console.log('[WalletCreationManager] Creating wallet worker');
+            walletWorker = new Worker(
+                new URL('../workers/walletCreator.ts', import.meta.url),
+                { type: 'module' }
+            );
+            console.log('[WalletCreationManager] Wallet worker created');
+        } catch (err) {
+            console.error('[WalletCreationManager] Failed to create worker', err);
+            throw err;
+        }
     }
-    walletWorker.onmessage = (ev) => onMessage(ev.data);
+      walletWorker.onmessage = (ev) => {
+        console.log('[WalletCreationManager] Worker response received', ev.data);
+        onMessage(ev.data);
+    };
     return walletWorker;
 }
 
 export function postWalletCreationMessage(params: { totalSol: number; duration: number; network: string; rpcUrl: string }) {
     if (!walletWorker) throw new Error('Worker not initialized');
-    walletWorker.postMessage(params);
+       try {
+        console.log('[WalletCreationManager] Posting message to worker', params);
+        walletWorker.postMessage(params);
+    } catch (err) {
+        console.error('[WalletCreationManager] Failed to post message', err);
+    }
 }
 
 const NumberInputStepper = ({ label, value, onChange, step, min, unit, helpText }: { label:string, value:string, onChange:(v:string)=>void, step:number, min:number, unit:string, helpText:string }) => {
