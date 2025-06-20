@@ -36,8 +36,12 @@ The easiest way to deploy your Next.js app is to use the [Vercel Platform](https
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
 ## Recover Phantom Wallet
 
-Use `recoverPhantom.js` to generate a Phantom wallet keypair from a mnemonic.
-Set the `PHANTOM_SEED` environment variable with your seed phrase before running the script:
+Use `recoverPhantom.js` to generate a Phantom wallet keypair from a mnemonic. Set the `PHANTOM_SEED` environment variable with your seed phrase before running the script
 
 ```bash
 PHANTOM_SEED="word1 word2 ... word12" node recoverPhantom.js
+```
+
+## Building the Web Worker
+
+Running the app requires a compiled Web Worker. When you execute `npm run dev`, the `predev` script automatically calls `npm run build:worker`, which compiles `src/workers/walletCreator.ts` to `public/workers/walletCreator.js`. If this build fails—for example due to TypeScript errors—wallet creation will not work.

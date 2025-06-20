@@ -32,6 +32,7 @@ export function initWalletCreationWorker(onMessage: (data: any) => void): Worker
         onMessage(ev.data);
     };
       walletWorker.onerror = (ev) => {
+        console.log('[WalletCreationManager] onerror event', ev);
         console.error('[WalletCreationManager] Worker error:', ev);
         onMessage({ error: ev.message || 'Worker failed' });
     };

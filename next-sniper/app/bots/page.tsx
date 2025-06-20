@@ -138,6 +138,7 @@ useEffect(() => {
         totalSol: number,
         durationMinutes: number
     ) => {
+        console.log('[TradingBotsPage] distributeFunds started');
         const baseAmount = totalSol / tradingWallets.length;
         const amounts = tradingWallets.map(() => baseAmount * (0.9 + Math.random() * 0.2));
         const diff = totalSol - amounts.reduce((a, b) => a + b, 0);
@@ -186,7 +187,8 @@ useEffect(() => {
                 if (i === tradingWallets.length - 1) {
                     saveBotWallets(network, tradingWallets);
                     addLog(`Saved ${tradingWallets.length} trading wallets`);
-                    setCreationState('idle'); 
+                    setCreationState('idle');
+                    console.log('[TradingBotsPage] distributeFunds completed'); 
                 }
             } catch (err: any) {
                 addLog(`Error funding wallet ${i + 1}: ${err.message}`);

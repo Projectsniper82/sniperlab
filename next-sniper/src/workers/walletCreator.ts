@@ -31,9 +31,11 @@ self.onmessage = async (ev) => {
       intermediates: intermediateWallets.map((w) => Array.from(w.secretKey)),
     };
 
-    self.postMessage({ wallets: serialized });
-    console.log('[walletCreator] Posted generated wallets');
-   } catch (err: any) {
+    console.log('[walletCreator] Posting generated wallets');
+  self.postMessage({ wallets: serialized });
+  console.log('[walletCreator] Posted generated wallets');
+  } catch (err: any) {
+    console.log('[walletCreator] Caught error, sending to main thread');
     console.error('[walletCreator] Error during wallet creation', err);
      const msg = err?.message || 'Unknown error';
     self.postMessage({ log: `[walletCreator] Error during wallet creation: ${msg}` });
