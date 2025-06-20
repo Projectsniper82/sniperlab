@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import { useGlobalLogs } from '@/context/GlobalLogContext';
 import { useNetwork, NetworkType } from '@/context/NetworkContext';
 import { clearBotWallet, loadBotWallet } from '@/utils/botWalletManager';
 import { TOKEN_PROGRAM_ID } from '@solana/spl-token';
@@ -65,12 +66,14 @@ export default function WalletCreationManager({ onStartCreation, onClearWallets,
     const [duration, setDuration] = useState('30');
     const { connection, network, rpcUrl } = useNetwork();
     const [showConfirmModal, setShowConfirmModal] = useState(false);
+    const { append } = useGlobalLogs();
 
     const confirmAndClearCurrentWallet = () => {
         clearBotWallet(network);
         setShowConfirmModal(false);
         // Assuming onClearWallets might refresh state, otherwise call a refresh function if needed
-        onClearWallets(); 
+        onClearWallets();
+        append('Cleared current bot wallet'); 
     };
 
     const handleClearCurrentWallet = async () => {
@@ -102,6 +105,7 @@ export default function WalletCreationManager({ onStartCreation, onClearWallets,
             return;
         }
         onStartCreation(solAmount, durationMinutes, network, rpcUrl);
+        append(`Requested creation of 6 bot wallets with ${solAmount} SOL`);
     };
 
     return (

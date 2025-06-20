@@ -6,6 +6,7 @@ import { AppWalletProvider } from '@/context/AppWalletProvider';
 import { TokenProvider } from '@/context/TokenContext';
 import { BotServiceProvider } from '@/context/BotServiceContext';
 import { BotLogicProvider } from '@/context/BotLogicContext';
+import { GlobalLogProvider } from '@/context/GlobalLogContext';
 import '@solana/wallet-adapter-react-ui/styles.css';
 
 export const metadata = {
@@ -22,7 +23,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <BotServiceProvider>
               <BotLogicProvider>
                 <AppWalletProvider>
-                  {children}
+                  <GlobalLogProvider>
+                    {children}
+                  </GlobalLogProvider>
                 </AppWalletProvider>
               </BotLogicProvider>
             </BotServiceProvider>

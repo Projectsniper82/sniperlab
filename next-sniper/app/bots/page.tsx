@@ -1,15 +1,16 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useEffect, useCallback, useRef } from 'react';
 import AppHeader from '@/components/AppHeader';
 import BotManager from '@/components/BotManager';
 import GlobalBotControls from '@/components/GlobalBotControls';
-import WalletCreationManager, { initWalletCreationWorker, postWalletCreationMessage } from '@/components/WalletCreationManager';
+import WalletCreationManager, { initWalletCreationWorker } from '@/components/WalletCreationManager';
 import { saveBotWallets } from '@/utils/botWalletManager';
 import { Keypair } from '@solana/web3.js';
 import { useToken } from '@/context/TokenContext';
 import { useBotLogic } from '@/context/BotLogicContext';
 import { useNetwork, NetworkType } from '@/context/NetworkContext';
+import { useGlobalLogs } from '@/context/GlobalLogContext';
 
 // Import other hooks and utilities you use for fetching LP data
 import { useWallet } from '@solana/wallet-adapter-react';
@@ -17,7 +18,7 @@ import { useWallet } from '@solana/wallet-adapter-react';
 export default function TradingBotsPage() {
     const { publicKey } = useWallet();
     const { isLogicEnabled, setIsLogicEnabled } = useBotLogic();
-    const [logs, setLogs] = useState<string[]>([]);
+    const { logs, append } = useGlobalLogs();
     const { network, rpcUrl } = useNetwork();
     const walletCreatorRef = useRef<Worker | null>(null);
 
@@ -83,7 +84,7 @@ export default function TradingBotsPage() {
 
     // --- Other handlers ---
     const addLog = (message: string) => {
-        setLogs(prev => [`${new Date().toLocaleTimeString()}: ${message}`, ...prev.slice(0, 199)]);
+       append(message);
     };
 
     const handleToggleLogic = (isEnabled: boolean) => {
