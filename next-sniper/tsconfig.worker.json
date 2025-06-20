@@ -4,9 +4,10 @@
     "noEmit": false,
     "noEmitOnError": false,
     "outDir": "./public/workers",
-    "module": "es2020",
+   "module": "esnext",
     "target": "es2020",
     "lib": ["es2020", "webworker"],
+    "moduleResolution": "bundler",
     "skipLibCheck": true
   },
  "include": [
