@@ -67,7 +67,7 @@ function replacer(key, value) {
 
 // --- Helper: Send Transaction ---
 async function sendAndConfirmSignedTransaction(connection, signedTransaction) {
-    console.log("[Helper] -> sendAndConfirmSignedTransaction: Sending...");
+       console.log("[Helper] -> sendAndConfirmSignedTransaction - Sending...");
     try {
         if (!signedTransaction) throw new Error('Invalid signed transaction object');
         const rawTransaction = signedTransaction.serialize();
@@ -120,7 +120,7 @@ async function sendAndConfirmSignedTransaction(connection, signedTransaction) {
 // --- Helper: Sign and Send Transaction ---
 async function signAndSendTransaction(connection, wallet, transaction) {
     if (!wallet || typeof wallet.signTransaction !== 'function') { throw new Error("Invalid wallet object provided for signing."); }
-    console.log("[Helper] -> signAndSendTransaction: Signing transaction...");
+     console.log("[Helper] -> signAndSendTransaction - Signing transaction...");
     try {
         const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
 
@@ -207,7 +207,7 @@ export const initRaydiumSdk = async (wallet, connection, currentNetwork) => {
 
 // --- ensureAtaExists ---
 export const getAtaAddressAndCreateInstruction = async (connection, ownerPublicKey, tokenMint) => {
-    console.log(`[ATA Ensure/GetIx] -> getAtaAddressAndCreateInstruction: Start for mint ${tokenMint}`);
+    console.log(`[ATA Ensure/GetIx] -> getAtaAddressAndCreateInstruction - Start for mint ${tokenMint}`);
     let mintPubkey;
     try {
         mintPubkey = new PublicKey(tokenMint);
@@ -251,7 +251,7 @@ export const getAtaAddressAndCreateInstruction = async (connection, ownerPublicK
 
 // --- ensureWSOLAccount ---
 export const getWSOLAccountAndInstructions = async (connection, ownerPublicKey, amountBN) => {
-    console.log(`[WSOL Ensure/GetIxs] -> getWSOLAccountAndInstructions: Start. Amount to wrap: ${amountBN.toString()}`);
+    console.log(`[WSOL Ensure/GetIxs] -> getWSOLAccountAndInstructions - Start. Amount to wrap: ${amountBN.toString()}`);
     const wsolMint = NATIVE_MINT;
     if (!ownerPublicKey) throw new Error("[WSOL Ensure/GetIxs] Owner PK missing.");
 
