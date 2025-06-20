@@ -3,7 +3,12 @@
 import React, { useState } from 'react';
 import { useGlobalLogs } from '@/context/GlobalLogContext';
 import { useNetwork, NetworkType } from '@/context/NetworkContext';
-import { clearBotWallet, loadBotWallet } from '@/utils/botWalletManager';
+import {
+    clearBotWallet,
+    clearBotWallets,
+    loadBotWallet,
+    loadBotWallets,
+} from '@/utils/botWalletManager';
 import { TOKEN_PROGRAM_ID } from '@solana/spl-token';
 
 let walletWorker: Worker | null = null;
@@ -82,14 +87,38 @@ export default function WalletCreationManager({ onStartCreation, onClearWallets,
             const sol = await connection.getBalance(wallet.publicKey);
             const tokens = await connection.getParsedTokenAccountsByOwner(wallet.publicKey, { programId: TOKEN_PROGRAM_ID });
             const tokenNonZero = tokens.value.some(t => (t.account.data as any).parsed.info.tokenAmount.uiAmount > 0);
-            
-            if (sol > 0 || tokenNonZero) {
+             if (sol > 0 || tokenNonZero) {
                 setShowConfirmModal(true);
                 return;
             }
         }
         if (window.confirm("Are you sure? This will permanently delete the current bot wallet for this network.")) {
             confirmAndClearCurrentWallet();
+        }
+    };
+
+        const handleClearAllWallets = async () => {
+        const wallets = loadBotWallets(network);
+        let hasBalance = false;
+        for (const w of wallets) {
+            const sol = await connection.getBalance(w.publicKey);
+            if (sol > 0) { hasBalance = true; break; }
+            const tokens = await connection.getParsedTokenAccountsByOwner(w.publicKey, { programId: TOKEN_PROGRAM_ID });
+            const nonZero = tokens.value.some(t => (t.account.data as any).parsed.info.tokenAmount.uiAmount > 0);
+            if (nonZero) { hasBalance = true; break; }
+        }
+
+        let proceed = true;
+        if (hasBalance) {
+            proceed = window.confirm('Some bot wallets still hold SOL or tokens. Continue anyway?');
+        } else {
+            proceed = window.confirm('Are you sure? This will permanently delete all bot wallets for this network.');
+        }
+
+        if (proceed) {
+            clearBotWallets(network);
+            onClearWallets();
+            append('Cleared all bot wallets');
         }
     };
 
@@ -161,7 +190,7 @@ export default function WalletCreationManager({ onStartCreation, onClearWallets,
                             )}
                         </button>
                         <button
-                            onClick={onClearWallets}
+                            onClick={handleClearAllWallets}
                             disabled={isProcessing}
                             className="w-full py-2 bg-red-900/50 hover:bg-red-800/70 border border-red-700/50 rounded-lg transition text-red-300 text-sm font-semibold disabled:bg-gray-500 disabled:cursor-not-allowed"
                         >
