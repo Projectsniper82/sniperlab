@@ -14,6 +14,7 @@ import {
 } from '@/utils/botWalletManager';
 import { useBotService } from '@/context/BotServiceContext';
 import { useBotLogic } from '@/context/BotLogicContext';
+import { useBotWalletReload } from '@/context/BotWalletReloadContext';
 
 // Define the props the BotManager will accept from the page
 
@@ -27,6 +28,7 @@ export default function BotManager({ selectedTokenAddress, isLpActive }: BotMana
     const { publicKey: userPublicKey, sendTransaction } = useWallet();
     const { addBot, removeBot, startBot, stopBot } = useBotService();
     const { isLogicEnabled } = useBotLogic();
+    const { registerReloader } = useBotWalletReload();
     const [botWallets, setBotWallets] = useState<Keypair[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [showConfirmModal, setShowConfirmModal] = useState(false);
@@ -36,7 +38,11 @@ export default function BotManager({ selectedTokenAddress, isLpActive }: BotMana
         const loaded = loadBotWallets(network);
         setBotWallets(loaded);
         setIsLoading(false);
-    }, [network]);
+     registerReloader(() => {
+            const refreshed = loadBotWallets(network);
+            setBotWallets(refreshed);
+        });
+    }, [network, registerReloader]);
 
     useEffect(() => {
         botWallets.forEach(w => addBot(w));
