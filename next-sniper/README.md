@@ -42,6 +42,6 @@ Use `recoverPhantom.js` to generate a Phantom wallet keypair from a mnemonic. Se
 PHANTOM_SEED="word1 word2 ... word12" node recoverPhantom.js
 ```
 
-## Building the Web Worker
+## Wallet Creation
 
-Running the app requires a compiled Web Worker. When you execute `npm run dev`, the `predev` script automatically calls `npm run build:worker`, which compiles `src/workers/walletCreator.ts` to `public/workers/walletCreator.js`. If this build fails—for example due to TypeScript errors—wallet creation will not work.
+Wallets are generated directly in the browser when you start the bot creation process. The previous worker build step is no longer required.

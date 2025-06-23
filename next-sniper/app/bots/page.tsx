@@ -1,19 +1,15 @@
 'use client';
 
-import React, { useEffect, useCallback, useRef, useState } from 'react';
+import React, { useEffect, useCallback, useState } from 'react';
 import AppHeader from '@/components/AppHeader';
 import BotManager from '@/components/BotManager';
 import GlobalBotControls from '@/components/GlobalBotControls';
-import WalletCreationManager, {
-    initWalletCreationWorker,
-    postWalletCreationMessage,
-    terminateWalletCreationWorker,
-} from '@/components/WalletCreationManager';
+import WalletCreationManager from '@/components/WalletCreationManager';
 import { saveBotWallets } from '@/utils/botWalletManager';
 import { Keypair, LAMPORTS_PER_SOL, SystemProgram, Transaction } from '@solana/web3.js';
 import { useToken } from '@/context/TokenContext';
 import { useBotLogic } from '@/context/BotLogicContext';
-import { useNetwork, NetworkType } from '@/context/NetworkContext';
+import { useNetwork } from '@/context/NetworkContext';
 import { useGlobalLogs } from '@/context/GlobalLogContext';
 
 // Import other hooks and utilities you use for fetching LP data
@@ -24,8 +20,6 @@ export default function TradingBotsPage() {
     const { isLogicEnabled, setIsLogicEnabled } = useBotLogic();
     const { logs, append } = useGlobalLogs();
     const { network, rpcUrl, connection } = useNetwork();
-    const walletCreatorRef = useRef<Worker | null>(null);
-    const creationParamsRef = useRef<{ totalSol: number; durationMinutes: number } | null>(null);
     const [creationState, setCreationState] = useState<'idle' | 'processing'>('idle');
 
     // FIX: Get the setter function from the context
@@ -61,42 +55,7 @@ export default function TradingBotsPage() {
 
     }, [tokenAddress, publicKey, setIsLpActive]);
 
-    // Initialize worker for wallet creation logs
-useEffect(() => {
-     try {
-        walletCreatorRef.current = initWalletCreationWorker((data: any) => {
-            console.log('[TradingBotsPage] Worker response', data);
-            if (data?.log) addLog(data.log);
-            if (data?.error) {
-                addLog(`Worker error: ${data.error}`);
-                setCreationState('idle');
-                return;
-            }
-            if (data?.wallets) {
-                const { trading, intermediates } = data.wallets as { trading: number[][]; intermediates: number[][] };
-                const tradingWallets = trading.map(arr => Keypair.fromSecretKey(new Uint8Array(arr)));
-                const intermediateWallets = intermediates.map(arr => Keypair.fromSecretKey(new Uint8Array(arr)));
-                addLog(`Received ${tradingWallets.length} trading and ${intermediateWallets.length} intermediate wallets`);
-
-                if (creationParamsRef.current && publicKey) {
-                    distributeFunds(tradingWallets, intermediateWallets, creationParamsRef.current.totalSol, creationParamsRef.current.durationMinutes);
-                } else {
-                    addLog('Missing creation params or main wallet connection.');
-                    setCreationState('idle');
-                }
-            }
-        });
-     
-    } catch (err) {
-        console.error('[TradingBotsPage] Failed to initialize worker', err);
-    }
-    return () => {
-         terminateWalletCreationWorker();
-        walletCreatorRef.current = null;
-    };
-}, [network, publicKey, sendTransaction, connection]);
-
-    // Run the check whenever the token or wallet changes
+ // Run the check whenever the token or wallet changes
     useEffect(() => {
         fetchLpTokenDetails();
     }, [fetchLpTokenDetails]);
@@ -112,19 +71,12 @@ useEffect(() => {
     };
 
     const handleStartCreation = (
+         wallets: Keypair[],
         totalSol: number,
-        duration: number,
-        network: NetworkType,
-        rpcUrl: string
+         duration: number
     ) => {
         setCreationState('processing');
-        creationParamsRef.current = { totalSol, durationMinutes: duration };
-            console.log('[TradingBotsPage] Sending creation message', { totalSol, duration, network, rpcUrl });
-        try {
-            postWalletCreationMessage({ totalSol, duration, network, rpcUrl });
-        } catch (err) {
-            console.error('[TradingBotsPage] Failed to post message to worker', err);
-        }
+        distributeFunds(wallets, totalSol, duration);
         addLog(`Started wallet creation on ${network} via ${rpcUrl}`);
     };
 
@@ -133,20 +85,19 @@ useEffect(() => {
     };
 
     const distributeFunds = (
-        tradingWallets: Keypair[],
-        intermediateWallets: Keypair[],
+        wallets: Keypair[],
         totalSol: number,
         durationMinutes: number
     ) => {
         console.log('[TradingBotsPage] distributeFunds started');
-        const baseAmount = totalSol / tradingWallets.length;
-        const amounts = tradingWallets.map(() => baseAmount * (0.9 + Math.random() * 0.2));
+        const baseAmount = totalSol / wallets.length;
+        const amounts = wallets.map(() => baseAmount * (0.9 + Math.random() * 0.2));
         const diff = totalSol - amounts.reduce((a, b) => a + b, 0);
         amounts[amounts.length - 1] += diff;
 
         const scheduleTimes: number[] = [];
-        const baseDelay = (durationMinutes * 60 * 1000) / tradingWallets.length;
-        for (let i = 0; i < tradingWallets.length; i++) {
+        const baseDelay = (durationMinutes * 60 * 1000) / wallets.length;
+        for (let i = 0; i < wallets.length; i++) {
             scheduleTimes.push(baseDelay * i + Math.random() * baseDelay * 0.5);
         }
 
@@ -162,31 +113,20 @@ useEffect(() => {
                     return;
                 }
 
-                const tx1 = new Transaction().add(
+                const tx = new Transaction().add(
                     SystemProgram.transfer({
                         fromPubkey: publicKey!,
-                        toPubkey: intermediateWallets[i].publicKey,
+             toPubkey: wallets[i].publicKey,
                         lamports,
                     })
                 );
-                const sig1 = await sendTransaction(tx1, connection);
-                await connection.confirmTransaction(sig1, 'confirmed');
-                addLog(`Funded intermediate ${intermediateWallets[i].publicKey.toBase58()} with ${amount.toFixed(4)} SOL`);
+                const sig = await sendTransaction(tx, connection);
+                await connection.confirmTransaction(sig, 'confirmed');
+                addLog(`Transferred ${amount.toFixed(4)} SOL to trading wallet ${wallets[i].publicKey.toBase58()}`);
 
-                const tx2 = new Transaction().add(
-                    SystemProgram.transfer({
-                        fromPubkey: intermediateWallets[i].publicKey,
-                        toPubkey: tradingWallets[i].publicKey,
-                        lamports,
-                    })
-                );
-                const sig2 = await connection.sendTransaction(tx2, [intermediateWallets[i]]);
-                await connection.confirmTransaction(sig2, 'confirmed');
-                addLog(`Transferred ${amount.toFixed(4)} SOL to trading wallet ${tradingWallets[i].publicKey.toBase58()}`);
-
-                if (i === tradingWallets.length - 1) {
-                    saveBotWallets(network, tradingWallets);
-                    addLog(`Saved ${tradingWallets.length} trading wallets`);
+                if (i === wallets.length - 1) {
+                    saveBotWallets(network, wallets);
+                    addLog(`Saved ${wallets.length} trading wallets`);
                     setCreationState('idle');
                     console.log('[TradingBotsPage] distributeFunds completed'); 
                 }
@@ -212,7 +152,7 @@ useEffect(() => {
                         onToggleLogic={handleToggleLogic}
                     />
                     <WalletCreationManager
-                        onStartCreation={handleStartCreation}
+                         distributeFunds={handleStartCreation}
                         onClearWallets={handleClearAll}
                         isProcessing={creationState === 'processing'}
                     />

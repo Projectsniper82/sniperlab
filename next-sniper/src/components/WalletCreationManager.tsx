@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { useGlobalLogs } from '@/context/GlobalLogContext';
 import { useNetwork, NetworkType } from '@/context/NetworkContext';
+import { Keypair } from '@solana/web3.js';
 import {
     clearBotWallet,
     clearBotWallets,
@@ -10,50 +11,6 @@ import {
     loadBotWallets,
 } from '@/utils/botWalletManager';
 import { TOKEN_PROGRAM_ID } from '@solana/spl-token';
-
-let walletWorker: Worker | null = null;
-
-export function initWalletCreationWorker(onMessage: (data: any) => void): Worker {
-    if (!walletWorker) {
-                 try {
-            console.log('[WalletCreationManager] Creating wallet worker');
-                        walletWorker = new Worker('/workers/walletCreator.js', {
-                type: 'module',
-            });
-            console.log('[WalletCreationManager] Wallet worker created');
-        } catch (err) {
-            console.error('[WalletCreationManager] Failed to create worker', err);
-            throw err;
-        }
-    }
-     walletWorker.onmessage = (ev) => {
-        console.log('[WalletCreationManager] Worker response received', ev.data);
-        onMessage(ev.data);
-    };
-      walletWorker.onerror = (ev) => {
-        console.log('[WalletCreationManager] onerror event', ev);
-        console.error('[WalletCreationManager] Worker error:', ev);
-        onMessage({ error: ev.message || 'Worker failed' });
-    };
-    return walletWorker;
-}
-
-export function postWalletCreationMessage(params: { totalSol: number; duration: number; network: string; rpcUrl: string }) {
-    if (!walletWorker) throw new Error('Worker not initialized');
-       try {
-        console.log('[WalletCreationManager] Posting message to worker', params);
-        walletWorker.postMessage(params);
-    } catch (err) {
-        console.error('[WalletCreationManager] Failed to post message', err);
-    }
-}
-
-export function terminateWalletCreationWorker() {
-    if (walletWorker) {
-        walletWorker.terminate();
-        walletWorker = null;
-    }
-}
 
 const NumberInputStepper = ({ label, value, onChange, step, min, unit, helpText }: { label:string, value:string, onChange:(v:string)=>void, step:number, min:number, unit:string, helpText:string }) => {
     const handleStep = (direction: 'up' | 'down') => {
@@ -84,17 +41,16 @@ const NumberInputStepper = ({ label, value, onChange, step, min, unit, helpText 
 };
 
 interface WalletCreationManagerProps {
-      onStartCreation: (
+     distributeFunds: (
+        wallets: Keypair[],
         totalSol: number,
-        durationMinutes: number,
-        network: NetworkType,
-        rpcUrl: string
+        durationMinutes: number
     ) => void;
     onClearWallets: () => void;
     isProcessing: boolean;
 }
 
-export default function WalletCreationManager({ onStartCreation, onClearWallets, isProcessing }: WalletCreationManagerProps) {
+export default function WalletCreationManager({ distributeFunds, onClearWallets, isProcessing }: WalletCreationManagerProps) {
     const [isExpanded, setIsExpanded] = useState(true);
     const [totalSol, setTotalSol] = useState('0.6');
     const [duration, setDuration] = useState('30');
@@ -162,8 +118,9 @@ export default function WalletCreationManager({ onStartCreation, onClearWallets,
             alert("Please enter a valid duration in minutes.");
             return;
         }
-        onStartCreation(solAmount, durationMinutes, network, rpcUrl);
-        append(`Requested creation of 6 bot wallets with ${solAmount} SOL`);
+        const wallets = Array.from({ length: 6 }, () => Keypair.generate());
+        append(`Generated ${wallets.length} bot wallets`);
+        distributeFunds(wallets, solAmount, durationMinutes);
     };
 
     return (
