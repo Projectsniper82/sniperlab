@@ -34,7 +34,7 @@ self.onmessage = async (ev) => {
         self.postMessage({ wallets: serialized });
         console.log('[walletCreator] Posted generated wallets');
     }
-     catch (err: any) { // Change this line
+    catch (err) {
         console.log('[walletCreator] Caught error, sending to main thread');
         console.error('[walletCreator] Error during wallet creation', err);
         const msg = err?.message || 'Unknown error';
