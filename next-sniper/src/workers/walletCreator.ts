@@ -1,3 +1,7 @@
+import { Buffer } from 'buffer';
+globalThis.Buffer ||= Buffer;
+
+
 console.log('[walletCreator] Worker script loaded');
 self.onmessage = async (ev) => {
     const { totalSol, duration, network, rpcUrl } = ev.data;
@@ -12,10 +16,7 @@ self.onmessage = async (ev) => {
         // Provide a window object for libraries expecting a browser environment
         // Cast to any to avoid Window vs WorkerGlobalScope type mismatch
         globalThis.window = self;
-        if (!globalThis.Buffer) {
-            const { Buffer } = await import('https://cdn.jsdelivr.net/npm/buffer@6.0.3/+esm');
-            globalThis.Buffer = Buffer;
-        }
+
         const web3 = await import('https://cdn.jsdelivr.net/npm/@solana/web3.js@1.98.2/lib/index.browser.esm.js');
         const tradingWallets = [];
         const intermediateWallets = [];
