@@ -13,6 +13,10 @@ self.onmessage = async (ev) => {
    // Provide a window object for libraries expecting a browser environment
   // Cast to any to avoid Window vs WorkerGlobalScope type mismatch
   (globalThis as any).window = self as any;
+     if (!(globalThis as any).Buffer) {
+      const { Buffer } = await import('https://cdn.jsdelivr.net/npm/buffer@6.0.3/+esm');
+      (globalThis as any).Buffer = Buffer;
+    }
     const web3 = await import(
     'https://cdn.jsdelivr.net/npm/@solana/web3.js@1.98.2/lib/index.browser.esm.js'
   );
