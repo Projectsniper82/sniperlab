@@ -7,36 +7,10 @@ import { Keypair } from '@solana/web3.js';
 import {
     clearBotWallets,
     loadBotWallet,
+    loadBotWallets,
 } from '@/utils/botWalletManager';
+import { NumberInputStepper } from '@/components/NumberInputStepper';
 import { TOKEN_PROGRAM_ID } from '@solana/spl-token';
-
-const NumberInputStepper = ({ label, value, onChange, step, min, unit, helpText }: { label:string, value:string, onChange:(v:string)=>void, step:number, min:number, unit:string, helpText:string }) => {
-    const handleStep = (direction: 'up' | 'down') => {
-        const currentValue = parseFloat(value) || 0;
-        const newValue = direction === 'up' ? currentValue + step : Math.max(min, currentValue - step);
-        onChange(newValue.toFixed(2));
-    };
-
-    return (
-        <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1">{label}</label>
-            <div className="flex items-center">
-                <input
-                    type="number"
-                    value={value}
-                    onChange={(e) => onChange(e.target.value)}
-                    className="w-full p-2 bg-gray-700 border-gray-600 rounded-l-md text-white text-center font-mono"
-                    placeholder="0.0"
-                />
-                <div className="flex flex-col">
-                    <button onClick={() => handleStep('up')} className="px-2 py-0.5 bg-gray-600 hover:bg-gray-500 text-white rounded-tr-md border-b border-gray-700">+</button>
-                    <button onClick={() => handleStep('down')} className="px-2 py-0.5 bg-gray-600 hover:bg-gray-500 text-white rounded-br-md">-</button>
-                </div>
-            </div>
-            <p className="text-xs text-gray-400 mt-1">{helpText}</p>
-        </div>
-    );
-};
 
 interface WalletCreationManagerProps {
      distributeFunds: (
@@ -115,24 +89,26 @@ export default function WalletCreationManager({ distributeFunds, onClearWallets,
                 <div className={`transition-all duration-500 ease-in-out ${isExpanded ? 'max-h-96 opacity-100' : 'max-h-0 opacity-0'}`}>
                     <div className="p-4 border-t border-gray-700/50 space-y-4">
                         <div className="grid grid-cols-2 gap-4">
-                            <NumberInputStepper 
-                                label="Total SOL to Distribute"
-                                value={totalSol}
-                                onChange={setTotalSol}
-                                step={0.1}
-                                min={0.1}
-                                unit="SOL"
-                                helpText="From your main wallet."
-                            />
-                             <NumberInputStepper 
-                                label="Duration"
-                                value={duration}
-                                onChange={setDuration}
-                                step={5}
-                                min={0}
-                                unit="Min"
-                                helpText="For random creation."
-                            />
+                           <div>
+                                <NumberInputStepper
+                                    label="Total SOL to Distribute"
+                                    value={totalSol}
+                                    onChange={setTotalSol}
+                                    step={0.1}
+                                    min={0.1}
+                                />
+                                <p className="text-xs text-gray-400 mt-1">From your main wallet.</p>
+                            </div>
+                            <div>
+                                <NumberInputStepper
+                                    label="Duration"
+                                    value={duration}
+                                    onChange={setDuration}
+                                    step={5}
+                                    min={0}
+                                />
+                                <p className="text-xs text-gray-400 mt-1">For random creation.</p>
+                            </div> 
                         </div>
                        <button
                             onClick={handleCreateClick}
