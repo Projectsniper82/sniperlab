@@ -6,7 +6,7 @@ import BotManager from '@/components/BotManager';
 import GlobalBotControls from '@/components/GlobalBotControls';
 import WalletCreationManager from '@/components/WalletCreationManager';
 import { saveBotWallets } from '@/utils/botWalletManager';
-import { Keypair, LAMPORTS_PER_SOL, SystemProgram, Transaction, sendAndConfirmTransaction } from '@solana/web3.js';
+import { Keypair, LAMPORTS_PER_SOL, SystemProgram, Transaction, sendAndConfirmTransaction, SendTransactionError } from '@solana/web3.js';
 import { useToken } from '@/context/TokenContext';
 import { useBotLogic } from '@/context/BotLogicContext';
 import { useNetwork } from '@/context/NetworkContext';
@@ -190,7 +190,12 @@ export default function TradingBotsPage() {
                     console.log('[TradingBotsPage] distributeFunds completed'); 
                 }
             } catch (err: any) {
-                addLog(`Error funding wallet ${i + 1}: ${err.message}`);
+                 if (err instanceof SendTransactionError) {
+                    const logStr = err.logs?.join('\n');
+                    addLog(`Error funding wallet ${i + 1}: ${err.message}${logStr ? `\n${logStr}` : ''}`);
+                } else {
+                    addLog(`Error funding wallet ${i + 1}: ${err.message}`);
+                }
                 setCreationState('idle');
             }
         };
