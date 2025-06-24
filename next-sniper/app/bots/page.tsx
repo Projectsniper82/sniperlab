@@ -139,7 +139,22 @@ export default function TradingBotsPage() {
                 saveBotWallets(network, wallets);
                 reloadWallets();
             } catch (err: any) {
-                addLog(`Error funding intermediate wallet: ${err.message}`);
+                if (err instanceof SendTransactionError) {
+                    let logs = err.logs;
+                    if (!logs && typeof err.getLogs === 'function') {
+                        try {
+                            logs = await err.getLogs(connection);
+                        } catch (_) {
+                            // ignore errors when fetching logs
+                        }
+                    }
+                    const logStr = logs?.join('\n');
+                    addLog(
+                        `Error funding intermediate wallet: ${err.message}${logStr ? `\n${logStr}` : ''}`,
+                    );
+                } else {
+                    addLog(`Error funding intermediate wallet: ${err.message}`);
+                }
                 setCreationState('idle');
                 return;
             }
