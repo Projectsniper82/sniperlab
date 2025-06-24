@@ -5,13 +5,14 @@ import AppHeader from '@/components/AppHeader';
 import BotManager from '@/components/BotManager';
 import GlobalBotControls from '@/components/GlobalBotControls';
 import WalletCreationManager from '@/components/WalletCreationManager';
-import { saveBotWallets } from '@/utils/botWalletManager';
+import { saveBotWallets, loadBotWallets, clearBotWallets } from '@/utils/botWalletManager';
 import { Keypair, LAMPORTS_PER_SOL, SystemProgram, Transaction, sendAndConfirmTransaction, SendTransactionError } from '@solana/web3.js';
 import { useToken } from '@/context/TokenContext';
 import { useBotLogic } from '@/context/BotLogicContext';
 import { useNetwork } from '@/context/NetworkContext';
 import { useGlobalLogs } from '@/context/GlobalLogContext';
 import { useBotWalletReload } from '@/context/BotWalletReloadContext';
+import { useBotService } from '@/context/BotServiceContext';
 
 // Import other hooks and utilities you use for fetching LP data
 import { useWallet } from '@solana/wallet-adapter-react';
@@ -83,8 +84,14 @@ export default function TradingBotsPage() {
         addLog(`Started wallet creation on ${network} via ${rpcUrl}`);
     };
 
+    const { removeBot } = useBotService();
+
     const handleClearAll = () => {
-        addLog("Simulation: Clear all wallets.");
+        const wallets = loadBotWallets(network);
+        wallets.forEach(w => removeBot(w.publicKey.toBase58()));
+        clearBotWallets(network);
+        reloadWallets();
+        addLog('Cleared all bot wallets.');
     };
 
       const distributeFunds = async (

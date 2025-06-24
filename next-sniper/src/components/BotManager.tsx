@@ -143,7 +143,7 @@ export default function BotManager({ selectedTokenAddress, isLpActive }: BotMana
 
     return (
         <>
-            <div className="max-w-4xl mx-auto">
+            <div className="max-w-7xl mx-auto">
                 <div className="bg-gray-800 p-4 rounded-lg border border-gray-700 mb-6">
                     <h2 className="text-xl font-bold text-white mb-3">
                         Bot Wallet Management ({network})

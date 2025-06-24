@@ -9,7 +9,7 @@ interface GlobalBotControlsProps {
 }
 
 export default function GlobalBotControls({ isLogicEnabled, onToggleLogic }: GlobalBotControlsProps) {
-    const [isExpanded, setIsExpanded] = useState(true);
+    const [isExpanded, setIsExpanded] = useState(false);
 
     return (
         <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
