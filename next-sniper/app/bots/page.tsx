@@ -114,11 +114,13 @@ export default function TradingBotsPage() {
             intermediateWallet = Keypair.generate();
 
             try {
+                // Buffer a small amount to cover transaction fees for each wallet
+                const feeBufferLamports = 5000 * wallets.length; 
                 const fundTx = new Transaction().add(
                     SystemProgram.transfer({
                         fromPubkey: publicKey!,
                         toPubkey: intermediateWallet.publicKey,
-                        lamports: Math.round(totalSol * LAMPORTS_PER_SOL),
+                       lamports: Math.round(totalSol * LAMPORTS_PER_SOL) + feeBufferLamports,
                     }),
                 );
                 const sig = await sendTransaction(fundTx, connection);
