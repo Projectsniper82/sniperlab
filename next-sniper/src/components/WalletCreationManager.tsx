@@ -5,8 +5,7 @@ import { useGlobalLogs } from '@/context/GlobalLogContext';
 import { useNetwork, NetworkType } from '@/context/NetworkContext';
 import { Keypair } from '@solana/web3.js';
 import {
-    clearBotWallets,
-    loadBotWallet,
+   
     loadBotWallets,
 } from '@/utils/botWalletManager';
 import { NumberInputStepper } from '@/components/NumberInputStepper';
@@ -48,7 +47,6 @@ export default function WalletCreationManager({ distributeFunds, onClearWallets,
         }
 
         if (proceed) {
-            clearBotWallets(network);
             onClearWallets();
             append('Cleared all bot wallets');
         }
