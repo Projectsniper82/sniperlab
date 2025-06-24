@@ -195,7 +195,12 @@ export default function TradingBotsPage() {
                     sig = await sendTransaction(tx, connection);
                     await connection.confirmTransaction(sig, 'confirmed');
                 }
-                addLog(`Transferred ${amount.toFixed(4)} SOL to trading wallet ${wallets[i].publicKey.toBase58()}`);
+                addLog(
+                    `Transferred ${amount.toFixed(4)} SOL to trading wallet ${wallets[i].publicKey.toBase58()}`,
+                );
+                // Refresh balances after each successful transfer so the UI
+                // reflects updated wallet states immediately
+                reloadWallets();
 
                 if (i === wallets.length - 1) {
                     saveBotWallets(network, wallets);
