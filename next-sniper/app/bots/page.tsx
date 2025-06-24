@@ -191,8 +191,18 @@ export default function TradingBotsPage() {
                 }
             } catch (err: any) {
                  if (err instanceof SendTransactionError) {
-                    const logStr = err.logs?.join('\n');
-                    addLog(`Error funding wallet ${i + 1}: ${err.message}${logStr ? `\n${logStr}` : ''}`);
+                    let logs = err.logs;
+                    if (!logs && typeof err.getLogs === 'function') {
+                        try {
+                            logs = await err.getLogs(connection);
+                        } catch (_) {
+                            // ignore errors when fetching logs
+                        }
+                    }
+                    const logStr = logs?.join('\n');
+                    addLog(
+                        `Error funding wallet ${i + 1}: ${err.message}${logStr ? `\n${logStr}` : ''}`,
+                    );
                 } else {
                     addLog(`Error funding wallet ${i + 1}: ${err.message}`);
                 }
