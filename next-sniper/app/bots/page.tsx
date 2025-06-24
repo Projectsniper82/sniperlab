@@ -105,6 +105,13 @@ export default function TradingBotsPage() {
             scheduleTimes.push(baseDelay * i + Math.random() * baseDelay * 0.5);
         }
 
+        if (!useIntermediate) {
+            // Save wallets immediately when no intermediate wallet is used so
+            // any failures during funding don't lose the generated keypairs.
+            saveBotWallets(network, wallets);
+            reloadWallets();
+        }
+
         let intermediateWallet: Keypair | null = null;
 
         if (useIntermediate) {
@@ -126,6 +133,11 @@ export default function TradingBotsPage() {
                 const sig = await sendTransaction(fundTx, connection);
                 await connection.confirmTransaction(sig, 'confirmed');
                 addLog(`Funded intermediate wallet ${intermediateWallet.publicKey.toBase58()}`);
+                 // Save wallets immediately after staging funds to avoid losing them
+                // if any subsequent transfer fails. They will be saved again at the end
+                // once all transfers complete.
+                saveBotWallets(network, wallets);
+                reloadWallets();
             } catch (err: any) {
                 addLog(`Error funding intermediate wallet: ${err.message}`);
                 setCreationState('idle');

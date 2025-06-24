@@ -45,3 +45,7 @@ PHANTOM_SEED="word1 word2 ... word12" node recoverPhantom.js
 ## Wallet Creation
 
 Wallets are generated directly in the browser when you start the bot creation process. The previous worker build step is no longer required.
+
+Wallets are saved to local storage as soon as funding begins. Early saving
+prevents loss of generated wallets if a transfer fails. They are saved again
+once all transfers complete for confirmation.
