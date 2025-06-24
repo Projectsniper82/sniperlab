@@ -129,7 +129,8 @@ export default function TradingBotsPage() {
 
             try {
                 // Buffer a small amount to cover transaction fees for each wallet
-                const feeBufferLamports = 5000 * wallets.length; 
+                // Increase the buffer to avoid failures when network fees spike
+                const feeBufferLamports = 10000 * wallets.length; 
                 const fundTx = new Transaction().add(
                     SystemProgram.transfer({
                         fromPubkey: publicKey!,

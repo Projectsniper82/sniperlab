@@ -13,6 +13,9 @@ import { calculateStandardAmmSwapQuote } from '@/utils/ammSwapCalculator';
 import { swapRaydiumTokens } from '@/utils/raydiumSdkAdapter';
 import { createWalletAdapter } from '@/utils/walletAdapter';
 import { useBotService } from '@/context/BotServiceContext';
+
+// Approximate network fee for a simple transfer in SOL
+const ESTIMATED_TX_FEE_SOL = 0.00001;
 // The props interface now accepts all properties from the parent.
 interface TradingBotProps {
     botWallet: Keypair;
@@ -377,6 +380,19 @@ export default function TradingBot({
         }
     };
 
+    const handleMaxSolClick = () => {
+        const max = solBalance - ESTIMATED_TX_FEE_SOL;
+        if (max > 0) {
+            setWithdrawSolAmount(max.toFixed(6));
+        } else {
+            setWithdrawSolAmount('0');
+        }
+    };
+
+    const handleMaxTokenClick = () => {
+        setWithdrawTokenAmount(tokenBalance.toFixed(6));
+    };
+
     return (
         <div className="bg-gray-900 border border-gray-700 rounded-lg p-6 space-y-6">
             <div>
@@ -465,12 +481,20 @@ export default function TradingBot({
                             <h4 className='font-bold text-gray-200 text-sm'>Withdraw SOL</h4>
                             <input type="text" placeholder="Recipient Address" value={withdrawSolAddress} onChange={(e) => setWithdrawSolAddress(e.target.value)} className="w-full p-2 bg-gray-700 border border-gray-600 rounded text-white" disabled={isProcessing} />
                             <input type="number" placeholder="SOL Amount" value={withdrawSolAmount} onChange={(e) => setWithdrawSolAmount(e.target.value)} className="w-full p-2 bg-gray-700 border border-gray-600 rounded" disabled={isProcessing} />
+                             <div className="flex justify-between text-xs text-gray-500 mt-1">
+                                <span className="cursor-pointer hover:underline" onClick={handleMaxSolClick}>Available: {solBalance.toFixed(6)}</span>
+                                <button type="button" onClick={handleMaxSolClick} className="text-blue-400 hover:underline">Max</button>
+                            </div>
                             <button onClick={handleWithdrawSolClick} disabled={isProcessing} className="w-full px-4 py-2 bg-green-600 hover:bg-green-700 rounded transition text-white disabled:bg-gray-500">Withdraw SOL</button>
                         </div>
                         <div className="space-y-3 md:col-span-2">
                             <h4 className='font-bold text-gray-200 text-sm'>Withdraw Tokens</h4>
                             <input type="text" placeholder="Recipient Address" value={withdrawTokenAddress} onChange={(e) => setWithdrawTokenAddress(e.target.value)} className="w-full p-2 bg-gray-700 border border-gray-600 rounded text-white" disabled={isProcessing || !tokenMintAddress} />
                             <input type="number" placeholder="Token Amount" value={withdrawTokenAmount} onChange={(e) => setWithdrawTokenAmount(e.target.value)} className="w-full p-2 bg-gray-700 border border-gray-600 rounded" disabled={isProcessing || !tokenMintAddress} />
+                             <div className="flex justify-between text-xs text-gray-500 mt-1">
+                                <span className="cursor-pointer hover:underline" onClick={handleMaxTokenClick}>Available: {tokenBalance.toFixed(6)}</span>
+                                <button type="button" onClick={handleMaxTokenClick} className="text-blue-400 hover:underline">Max</button>
+                            </div>
                             <button onClick={handleWithdrawTokenClick} disabled={isProcessing || !tokenMintAddress} className="w-full px-4 py-2 bg-green-600 hover:bg-green-700 rounded transition text-white disabled:bg-gray-500">Withdraw Tokens</button>
                         </div>
                     </div>
