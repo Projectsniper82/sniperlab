@@ -176,20 +176,22 @@ export default function BotManager({ selectedTokenAddress, isLpActive }: BotMana
                 </div>
 
                 {botWallets.length > 0 ? (
-                    botWallets.map(wallet => (
-                        <TradingBot
-                            key={wallet.publicKey.toBase58()}
-                            botWallet={wallet}
-                            botPublicKeyString={wallet.publicKey.toBase58()}
-                            onFund={createFundHandler(wallet)}
-                            onWithdraw={createWithdrawHandler(wallet)}
-                            onWithdrawToken={createWithdrawTokenHandler(wallet)}
-                            tokenMintAddress={selectedTokenAddress}
-                            isLogicEnabled={isLogicEnabled}
-                            selectedTokenAddress={selectedTokenAddress}
-                            isLpActive={isLpActive}
-                        />
-                    ))
+                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {botWallets.map(wallet => (
+                            <TradingBot
+                                key={wallet.publicKey.toBase58()}
+                                botWallet={wallet}
+                                botPublicKeyString={wallet.publicKey.toBase58()}
+                                onFund={createFundHandler(wallet)}
+                                onWithdraw={createWithdrawHandler(wallet)}
+                                onWithdrawToken={createWithdrawTokenHandler(wallet)}
+                                tokenMintAddress={selectedTokenAddress}
+                                isLogicEnabled={isLogicEnabled}
+                                selectedTokenAddress={selectedTokenAddress}
+                                isLpActive={isLpActive}
+                            />
+                        ))}
+                    </div>
                 ) : (
                     <div className="text-center py-10 bg-gray-800 rounded-lg">
                         <p className="text-gray-400">Create a bot wallet to begin trading.</p>

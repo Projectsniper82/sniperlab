@@ -111,7 +111,7 @@ export default function TradingBot({
     useEffect(() => {
         refreshBotBalances();
 
-    }, [refreshBotBalances]);
+    }, [refreshBotBalances, botWallet]);
 
     // Quote for manual buy
     useEffect(() => {
