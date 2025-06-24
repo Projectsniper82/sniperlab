@@ -6,11 +6,12 @@ import BotManager from '@/components/BotManager';
 import GlobalBotControls from '@/components/GlobalBotControls';
 import WalletCreationManager from '@/components/WalletCreationManager';
 import { saveBotWallets } from '@/utils/botWalletManager';
-import { Keypair, LAMPORTS_PER_SOL, SystemProgram, Transaction } from '@solana/web3.js';
+import { Keypair, LAMPORTS_PER_SOL, SystemProgram, Transaction, sendAndConfirmTransaction } from '@solana/web3.js';
 import { useToken } from '@/context/TokenContext';
 import { useBotLogic } from '@/context/BotLogicContext';
 import { useNetwork } from '@/context/NetworkContext';
 import { useGlobalLogs } from '@/context/GlobalLogContext';
+import { useBotWalletReload } from '@/context/BotWalletReloadContext';
 
 // Import other hooks and utilities you use for fetching LP data
 import { useWallet } from '@solana/wallet-adapter-react';
@@ -21,6 +22,7 @@ export default function TradingBotsPage() {
     const { logs, append } = useGlobalLogs();
     const { network, rpcUrl, connection } = useNetwork();
     const [creationState, setCreationState] = useState<'idle' | 'processing'>('idle');
+    const { reloadWallets } = useBotWalletReload();
 
     // FIX: Get the setter function from the context
     const { tokenAddress, isLpActive, setIsLpActive, setTokenAddress } = useToken();
@@ -76,7 +78,8 @@ export default function TradingBotsPage() {
          duration: number
     ) => {
         setCreationState('processing');
-        distributeFunds(wallets, totalSol, duration);
+         // Use an intermediate wallet to reduce Phantom confirmations
+        distributeFunds(wallets, totalSol, duration, true);
         addLog(`Started wallet creation on ${network} via ${rpcUrl}`);
     };
 
@@ -84,11 +87,12 @@ export default function TradingBotsPage() {
         addLog("Simulation: Clear all wallets.");
     };
 
-    const distributeFunds = (
-        wallets: Keypair[],
-        totalSol: number,
-        durationMinutes: number
-    ) => {
+    const distributeFunds = async ( // <--- ADD 'async' HERE
+    wallets: Keypair[],
+    totalSol: number,
+    durationMinutes: number,
+    useIntermediate: boolean = false,
+) => {
         console.log('[TradingBotsPage] distributeFunds started');
         const baseAmount = totalSol / wallets.length;
         const amounts = wallets.map(() => baseAmount * (0.9 + Math.random() * 0.2));
@@ -101,31 +105,72 @@ export default function TradingBotsPage() {
             scheduleTimes.push(baseDelay * i + Math.random() * baseDelay * 0.5);
         }
 
+        let intermediateWallet: Keypair | null = null;
+
+        if (useIntermediate) {
+            // Create an intermediate wallet used purely to stage funds before
+            // distributing them. This wallet exists for compliance/legal reasons
+            // and allows us to confirm a single Phantom transaction.
+            intermediateWallet = Keypair.generate();
+
+            try {
+                const fundTx = new Transaction().add(
+                    SystemProgram.transfer({
+                        fromPubkey: publicKey!,
+                        toPubkey: intermediateWallet.publicKey,
+                        lamports: Math.round(totalSol * LAMPORTS_PER_SOL),
+                    }),
+                );
+                const sig = await sendTransaction(fundTx, connection);
+                await connection.confirmTransaction(sig, 'confirmed');
+                addLog(`Funded intermediate wallet ${intermediateWallet.publicKey.toBase58()}`);
+            } catch (err: any) {
+                addLog(`Error funding intermediate wallet: ${err.message}`);
+                setCreationState('idle');
+                return;
+            }
+        }
+
         const run = async (i: number) => {
             const amount = amounts[i];
             const lamports = Math.round(amount * LAMPORTS_PER_SOL);
             try {
-                const balance = await connection.getBalance(publicKey!);
-                const required = totalSol * LAMPORTS_PER_SOL;
-                if (balance < required) {
-                    addLog('Insufficient balance to fund wallets.');
-                    setCreationState('idle');
-                    return;
+                 if (!useIntermediate) {
+                    const balance = await connection.getBalance(publicKey!);
+                    const required = totalSol * LAMPORTS_PER_SOL;
+                    if (balance < required) {
+                        addLog('Insufficient balance to fund wallets.');
+                        setCreationState('idle');
+                        return;
+                    }
                 }
 
-                const tx = new Transaction().add(
-                    SystemProgram.transfer({
-                        fromPubkey: publicKey!,
-             toPubkey: wallets[i].publicKey,
-                        lamports,
-                    })
-                );
-                const sig = await sendTransaction(tx, connection);
-                await connection.confirmTransaction(sig, 'confirmed');
+                let sig: string;
+                if (useIntermediate && intermediateWallet) {
+                    const tx = new Transaction().add(
+                        SystemProgram.transfer({
+                            fromPubkey: intermediateWallet.publicKey,
+                            toPubkey: wallets[i].publicKey,
+                            lamports,
+                        })
+                    );
+                    sig = await sendAndConfirmTransaction(connection, tx, [intermediateWallet]);
+                } else {
+                    const tx = new Transaction().add(
+                        SystemProgram.transfer({
+                            fromPubkey: publicKey!,
+                            toPubkey: wallets[i].publicKey,
+                            lamports,
+                        })
+                    );
+                    sig = await sendTransaction(tx, connection);
+                    await connection.confirmTransaction(sig, 'confirmed');
+                }
                 addLog(`Transferred ${amount.toFixed(4)} SOL to trading wallet ${wallets[i].publicKey.toBase58()}`);
 
                 if (i === wallets.length - 1) {
                     saveBotWallets(network, wallets);
+                    reloadWallets();
                     addLog(`Saved ${wallets.length} trading wallets`);
                     setCreationState('idle');
                     console.log('[TradingBotsPage] distributeFunds completed'); 
