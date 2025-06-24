@@ -5,10 +5,8 @@ import { useGlobalLogs } from '@/context/GlobalLogContext';
 import { useNetwork, NetworkType } from '@/context/NetworkContext';
 import { Keypair } from '@solana/web3.js';
 import {
-    clearBotWallet,
     clearBotWallets,
     loadBotWallet,
-    loadBotWallets,
 } from '@/utils/botWalletManager';
 import { TOKEN_PROGRAM_ID } from '@solana/spl-token';
 
@@ -51,36 +49,11 @@ interface WalletCreationManagerProps {
 }
 
 export default function WalletCreationManager({ distributeFunds, onClearWallets, isProcessing }: WalletCreationManagerProps) {
-    const [isExpanded, setIsExpanded] = useState(true);
+    const [isExpanded, setIsExpanded] = useState(false);
     const [totalSol, setTotalSol] = useState('0.6');
     const [duration, setDuration] = useState('30');
-    const { connection, network, rpcUrl } = useNetwork();
-    const [showConfirmModal, setShowConfirmModal] = useState(false);
+    const { connection, network } = useNetwork();
     const { append } = useGlobalLogs();
-
-    const confirmAndClearCurrentWallet = () => {
-        clearBotWallet(network);
-        setShowConfirmModal(false);
-        // Assuming onClearWallets might refresh state, otherwise call a refresh function if needed
-        onClearWallets();
-        append('Cleared current bot wallet'); 
-    };
-
-    const handleClearCurrentWallet = async () => {
-        const wallet = loadBotWallet(network);
-        if (wallet) {
-            const sol = await connection.getBalance(wallet.publicKey);
-            const tokens = await connection.getParsedTokenAccountsByOwner(wallet.publicKey, { programId: TOKEN_PROGRAM_ID });
-            const tokenNonZero = tokens.value.some(t => (t.account.data as any).parsed.info.tokenAmount.uiAmount > 0);
-             if (sol > 0 || tokenNonZero) {
-                setShowConfirmModal(true);
-                return;
-            }
-        }
-        if (window.confirm("Are you sure? This will permanently delete the current bot wallet for this network.")) {
-            confirmAndClearCurrentWallet();
-        }
-    };
 
         const handleClearAllWallets = async () => {
         const wallets = loadBotWallets(network);
@@ -110,7 +83,7 @@ export default function WalletCreationManager({ distributeFunds, onClearWallets,
     const handleCreateClick = () => {
         const solAmount = parseFloat(totalSol);
         const durationMinutes = parseInt(duration, 10);
-        if (isNaN(solAmount) || solAmount <= 0) {
+        if (isNaN(solAmount) || solAmount < 0) {
             alert("Please enter a valid amount of SOL.");
             return;
         }
@@ -156,7 +129,7 @@ export default function WalletCreationManager({ distributeFunds, onClearWallets,
                                 value={duration}
                                 onChange={setDuration}
                                 step={5}
-                                min={1}
+                                min={0}
                                 unit="Min"
                                 helpText="For random creation."
                             />
@@ -182,27 +155,9 @@ export default function WalletCreationManager({ distributeFunds, onClearWallets,
                         >
                             Clear All Bot Wallets
                         </button>
-                        <button
-                            onClick={handleClearCurrentWallet}
-                            disabled={isProcessing}
-                            className="w-full py-2 bg-red-800/50 hover:bg-red-700/70 border border-red-700/50 rounded-lg transition text-red-300 text-sm font-semibold disabled:bg-gray-500 disabled:cursor-not-allowed"
-                        >
-                            Clear Bot Wallet
-                        </button>
                     </div>
                 </div>
             </div>
-            {showConfirmModal && (
-                <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
-                    <div className="bg-gray-800 p-6 rounded-lg text-center space-y-4">
-                        <p className="text-white">The bot wallet still contains SOL or tokens. Withdraw funds before deleting. Continue anyway?</p>
-                        <div className="space-x-2">
-                            <button onClick={() => setShowConfirmModal(false)} className="px-3 py-1 bg-gray-700 text-white rounded">Cancel</button>
-                            <button onClick={confirmAndClearCurrentWallet} className="px-3 py-1 bg-red-800 text-white rounded">Delete</button>
-                        </div>
-                    </div>
-                </div>
-            )}
         </>
     );
 }
