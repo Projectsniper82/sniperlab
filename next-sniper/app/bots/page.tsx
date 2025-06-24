@@ -87,12 +87,12 @@ export default function TradingBotsPage() {
         addLog("Simulation: Clear all wallets.");
     };
 
-    const distributeFunds = async ( // <--- ADD 'async' HERE
-    wallets: Keypair[],
-    totalSol: number,
-    durationMinutes: number,
-    useIntermediate: boolean = false,
-) => {
+      const distributeFunds = async (
+        wallets: Keypair[],
+        totalSol: number,
+        durationMinutes: number,
+        useIntermediate: boolean = false,
+    ) => {
         console.log('[TradingBotsPage] distributeFunds started');
         const baseAmount = totalSol / wallets.length;
         const amounts = wallets.map(() => baseAmount * (0.9 + Math.random() * 0.2));
