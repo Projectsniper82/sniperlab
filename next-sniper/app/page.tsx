@@ -762,11 +762,18 @@ useEffect(() => {
             {/* Header */}
             <AppHeader onNetworkChange={handleNetworkChange} />
 
-            {/* Mint Button Section */}
-            {wallet && (
-                <div className="mb-6 text-center">
-                    <button
-                        onClick={async () => {
+          {/* Mint button moved inside token address box below */}
+                        {/* Main Content Grid */}
+            <div className="grid lg:grid-cols-3 gap-6 mb-6">
+                <div className="lg:col-span-1 space-y-6">
+                    <div className="bg-gray-900 p-4 sm:p-6 rounded-lg border border-gray-800 shadow">
+                        <label htmlFor="token-address-input" className="block text-lg mb-2 text-gray-200">Token Address ({network})</label>
+                        <input id="token-address-input" type="text" value={tokenAddress} onChange={(e) => setTokenAddress(e.target.value)} placeholder={`Paste ${network} token mint address`} className="w-full mb-3 p-3 bg-gray-800 border border-gray-700 rounded text-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                        {errorMessage && (<p className="text-red-400 text-sm mb-3">{errorMessage}</p>)}
+                        <div className="flex flex-wrap gap-2">
+                            {wallet && (
+                                <button
+                                    onClick={async () => {
                             // ... (Mint button logic - keep as is)
                             console.log('[LOGGING PLAN - MINT START] Mint button clicked.');
                             if (wallet && wallet.publicKey) {
@@ -879,24 +886,13 @@ useEffect(() => {
                                 setTimeout(() => setNotification(prev => prev.message.includes("Minting TestToken") || prev.message.includes("Token minted!") ? { show: false, message: '', type: '' } : prev), 4000);
                             }
                         }}
-                        disabled={isLoading || network === 'mainnet-beta'}
-                        className="px-6 py-3 bg-green-600 rounded-lg hover:bg-green-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                         disabled={isLoading || network === 'mainnet-beta'}
+                        className="px-3 py-1 text-sm bg-blue-600 rounded hover:bg-blue-700 transition text-white disabled:opacity-50 disabled:cursor-not-allowed"
                     >
+
                         {isLoading ? 'Processing...' : `Mint New Token (Devnet Only)`}
                     </button>
-                </div>
-            )}
-
-            {/* Main Content Grid */}
-            <div className="grid lg:grid-cols-3 gap-6 mb-6">
-                <div className="lg:col-span-1 space-y-6">
-                    <div className="bg-gray-900 p-4 sm:p-6 rounded-lg border border-gray-800 shadow">
-                        <label htmlFor="token-address-input" className="block text-lg mb-2 text-gray-200">Token Address ({network})</label>
-                        <input id="token-address-input" type="text" value={tokenAddress} onChange={(e) => setTokenAddress(e.target.value)} placeholder={`Paste ${network} token mint address`} className="w-full mb-3 p-3 bg-gray-800 border border-gray-700 rounded text-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                        {errorMessage && (<p className="text-red-400 text-sm mb-3">{errorMessage}</p>)}
-                        <div className="flex flex-wrap gap-2">
-                            <button onClick={refreshBalances} disabled={!wallet || isLoading} className="px-4 py-2 bg-gray-700 rounded hover:bg-gray-600 disabled:opacity-50">{isLoading ? 'Refreshing...' : 'Refresh Balances'}</button>
-                        </div>
+                        )}
                     </div>
                    {network === 'devnet' && <AirdropCommand />}
                   </div>
@@ -913,6 +909,7 @@ useEffect(() => {
                                 userPairedToken={userPairedToken}
                                 totalLpSupply={totalLpSupply}
                                 lpTokenDecimals={lpTokenDecimals}
+                                refreshBalances={refreshBalances}
                             />
                         </div>
                         <div className="md:col-span-2">
