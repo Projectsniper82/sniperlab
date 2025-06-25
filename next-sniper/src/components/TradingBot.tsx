@@ -397,7 +397,7 @@ export default function TradingBot({
             setWithdrawError('Invalid amount or address.');
             return;
         }
-        if (amount > maxWithdrawSol) {
+        if (amount - maxWithdrawSol > 1e-9) {
             setWithdrawError('Amount exceeds available balance.');
             return;
         }
@@ -438,8 +438,16 @@ export default function TradingBot({
     };
 
       const handleMaxSolClick = async () => {
-    setWithdrawSolAmount(maxWithdrawSol.toFixed(6));
-}; 
+     if (maxWithdrawSol <= 0) {
+        setWithdrawError('Balance too low to withdraw after fees.');
+        setWithdrawSolAmount('');
+        return;
+    }
+    const factor = Math.pow(10, 6);
+    const floored = Math.floor(maxWithdrawSol * factor) / factor;
+    setWithdrawSolAmount(floored.toFixed(6));
+    setWithdrawError('');
+};
 
     const handleMaxTokenClick = () => {
         setWithdrawTokenAmount(tokenBalance.toFixed(6));

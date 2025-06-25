@@ -24,17 +24,17 @@ export default function AppHeader({ onNetworkChange }: AppHeaderProps) {
 
   return (
     <header className="mb-6">
-      <div className="flex justify-between items-center mb-3">
+      <div className="flex justify-between items-center mb-2">
         <nav className="space-x-4">
           <Link href="/" className="text-blue-400 hover:text-blue-300">Home</Link>
           <Link href="/bots" className="text-blue-400 hover:text-blue-300">Trading Bots</Link>
         </nav>
+       <h1 className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-purple-400 to-blue-400 bg-clip-text text-transparent">
+          SniperLab
+        </h1>
         <WalletMultiButton />
       </div>
-      <div className="flex flex-col sm:flex-row justify-center items-center mb-2 sm:space-x-4 space-y-2 sm:space-y-0 text-center">
-        <h1 className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-purple-400 to-blue-400 bg-clip-text text-transparent pb-2">
-          Sniper Lab
-        </h1>
+      <div className="flex justify-center items-center mb-2">
         <div className="bg-gray-800 p-1 rounded-lg flex space-x-1">
           <button
             onClick={() => handleChange('devnet')}

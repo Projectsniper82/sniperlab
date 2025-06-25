@@ -17,6 +17,7 @@ function TokenInfo({
   userPairedToken,
   totalLpSupply, // raw string total LP supply
   lpTokenDecimals,
+  refreshBalances,
 }) {
   // Ensure tokenInfo and decimals exist before proceeding
   if (!tokenInfo || tokenInfo.decimals === undefined || tokenInfo.decimals === null) {
@@ -171,6 +172,14 @@ function TokenInfo({
             <p className="text-white text-xl font-bold">{solBalance?.toFixed(4) ?? '0.0000'}</p>
           </div>
         </div>
+        {refreshBalances && (
+          <button
+            onClick={refreshBalances}
+            className="mt-3 px-3 py-1 text-xs bg-gray-700 rounded hover:bg-gray-600"
+          >
+            Refresh Balances
+          </button>
+        )}
       </div>
     </div>
   );
