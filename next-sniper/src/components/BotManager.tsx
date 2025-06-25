@@ -89,16 +89,18 @@ export default function BotManager({ selectedTokenAddress, isLpActive }: BotMana
 
     const createFundHandler = useCallback((wallet: Keypair) => async (amount: number): Promise<string> => {
         if (network === 'devnet') {
-            const sig = await connection.requestAirdrop(wallet.publicKey, amount * LAMPORTS_PER_SOL);
+            const lamports = Math.round(amount * LAMPORTS_PER_SOL);
+            const sig = await connection.requestAirdrop(wallet.publicKey, lamports);
             await connection.confirmTransaction(sig, 'confirmed');
             return sig;
         }
         if (!userPublicKey || !sendTransaction) throw new Error('User wallet not connected.');
+        const lamports = Math.round(amount * LAMPORTS_PER_SOL);
         const transaction = new Transaction().add(
             SystemProgram.transfer({
                 fromPubkey: userPublicKey,
                 toPubkey: wallet.publicKey,
-                lamports: amount * LAMPORTS_PER_SOL,
+                lamports,
             })
         );
         const sig = await sendTransaction(transaction, connection);
@@ -108,11 +110,12 @@ export default function BotManager({ selectedTokenAddress, isLpActive }: BotMana
 
     const createWithdrawHandler = useCallback((wallet: Keypair) => async (recipientAddress: string, amount: number): Promise<string> => {
         const recipientPublicKey = new PublicKey(recipientAddress);
+         const lamports = Math.round(amount * LAMPORTS_PER_SOL);
         const transaction = new Transaction().add(
             SystemProgram.transfer({
                 fromPubkey: wallet.publicKey,
                 toPubkey: recipientPublicKey,
-                lamports: amount * LAMPORTS_PER_SOL,
+                lamports,
             })
         );
         return await sendAndConfirmTransaction(connection, transaction, [wallet]);
