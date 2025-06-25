@@ -1,7 +1,7 @@
 'use client';
 
 import { useNetwork } from '@/context/NetworkContext';
-import { LAMPORTS_PER_SOL, PublicKey, Keypair } from '@solana/web3.js';
+import { LAMPORTS_PER_SOL, PublicKey, Keypair, SystemProgram, TransactionMessage } from '@solana/web3.js';
 import { getAssociatedTokenAddress, getAccount, NATIVE_MINT } from '@solana/spl-token';
 import React, { useState, useEffect, useCallback } from 'react';
 import BN from 'bn.js';
@@ -380,14 +380,35 @@ export default function TradingBot({
         }
     };
 
-    const handleMaxSolClick = () => {
-        const max = solBalance - ESTIMATED_TX_FEE_SOL;
-        if (max > 0) {
-            setWithdrawSolAmount(max.toFixed(6));
-        } else {
-            setWithdrawSolAmount('0');
+      const handleMaxSolClick = async () => {
+    let feeSol = ESTIMATED_TX_FEE_SOL;
+    try {
+        const { blockhash } = await connection.getLatestBlockhash();
+        const message = new TransactionMessage({
+            payerKey: botWallet.publicKey,
+            recentBlockhash: blockhash,
+            instructions: [
+                SystemProgram.transfer({
+                    fromPubkey: botWallet.publicKey,
+                    toPubkey: botWallet.publicKey,
+                    lamports: 1, 
+                }),
+            ],
+        }).compileToV0Message();
+        
+        const feeResponse = await connection.getFeeForMessage(message);
+
+        // CORRECTED: Check for feeResponse.value, not just feeResponse
+        if (feeResponse && feeResponse.value !== null) {
+            // CORRECTED: Use feeResponse.value for the calculation
+            feeSol = feeResponse.value / LAMPORTS_PER_SOL;
         }
-    };
+    } catch (e) {
+        console.warn('Failed to fetch network fee, using fallback.', e);
+    }
+    const max = solBalance - feeSol;
+    setWithdrawSolAmount(max > 0 ? max.toFixed(6) : '0'); 
+};
 
     const handleMaxTokenClick = () => {
         setWithdrawTokenAmount(tokenBalance.toFixed(6));
