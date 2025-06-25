@@ -398,10 +398,9 @@ export default function TradingBot({
         
         const feeResponse = await connection.getFeeForMessage(message);
 
-        // CORRECTED: Check for feeResponse.value, not just feeResponse
-        if (feeResponse && feeResponse.value !== null) {
-            // CORRECTED: Use feeResponse.value for the calculation
-            feeSol = feeResponse.value / LAMPORTS_PER_SOL;
+         const response = await connection.getFeeForMessage(message);
+        if (response !== null) {
+            feeSol = Number(response.value) / LAMPORTS_PER_SOL;
         }
     } catch (e) {
         console.warn('Failed to fetch network fee, using fallback.', e);
