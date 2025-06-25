@@ -180,11 +180,12 @@ export default function BotManager({ selectedTokenAddress, isLpActive }: BotMana
 
                 {botWallets.length > 0 ? (
                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        {botWallets.map(wallet => (
+                       {botWallets.map((wallet, idx) => (
                             <TradingBot
                                 key={wallet.publicKey.toBase58()}
                                 botWallet={wallet}
                                 botPublicKeyString={wallet.publicKey.toBase58()}
+                                index={idx + 1}
                                 onFund={createFundHandler(wallet)}
                                 onWithdraw={createWithdrawHandler(wallet)}
                                 onWithdrawToken={createWithdrawTokenHandler(wallet)}

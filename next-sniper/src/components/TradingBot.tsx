@@ -24,9 +24,14 @@ interface TradingBotProps {
     selectedTokenAddress: string;
     isLpActive: boolean;
     isLogicEnabled: boolean;
+    index: number;
     onFund: (amount: number) => Promise<string>;
     onWithdraw: (recipientAddress: string, amount: number) => Promise<string>;
-    onWithdrawToken: (recipientAddress: string, amount: number, mintAddress: string) => Promise<string>;
+    onWithdrawToken: (
+        recipientAddress: string,
+        amount: number,
+        mintAddress: string
+    ) => Promise<string>;
 }
 
 export default function TradingBot({
@@ -36,6 +41,7 @@ export default function TradingBot({
     selectedTokenAddress,
     isLpActive,
     isLogicEnabled,
+    index,
     onFund,
     onWithdraw,
     onWithdrawToken
@@ -49,6 +55,13 @@ export default function TradingBot({
     const logs = getLogs(botPublicKeyString);
     // UI State
     const [isWithdrawVisible, setIsWithdrawVisible] = useState(false);
+    const [isManualOpen, setIsManualOpen] = useState(false);
+
+    // Dynamic network values
+    const [minRentSol, setMinRentSol] = useState(0);
+    const [txFeeSol, setTxFeeSol] = useState(ESTIMATED_TX_FEE_SOL);
+    const [maxWithdrawSol, setMaxWithdrawSol] = useState(0);
+    const [withdrawError, setWithdrawError] = useState('');
 
     // Form State
     const [withdrawSolAmount, setWithdrawSolAmount] = useState('');
@@ -115,6 +128,43 @@ export default function TradingBot({
         refreshBotBalances();
 
     }, [refreshBotBalances, botWallet]);
+
+     // Fetch rent exemption and fee data
+    useEffect(() => {
+        const fetchParams = async () => {
+            try {
+                const rentLamports = await connection.getMinimumBalanceForRentExemption(0);
+                setMinRentSol(rentLamports / LAMPORTS_PER_SOL);
+
+                const { blockhash } = await connection.getLatestBlockhash();
+                const message = new TransactionMessage({
+                    payerKey: botWallet.publicKey,
+                    recentBlockhash: blockhash,
+                    instructions: [
+                        SystemProgram.transfer({
+                            fromPubkey: botWallet.publicKey,
+                            toPubkey: botWallet.publicKey,
+                            lamports: 1,
+                        }),
+                    ],
+                }).compileToV0Message();
+                const feeResponse = await connection.getFeeForMessage(message);
+                if (feeResponse && feeResponse.value !== null) {
+                    setTxFeeSol(feeResponse.value / LAMPORTS_PER_SOL);
+                }
+            } catch (e) {
+                console.warn('Failed to fetch rent/fee info', e);
+            }
+        };
+
+        fetchParams();
+    }, [connection, botWallet]);
+
+    // Update max withdrawal whenever balance or params change
+    useEffect(() => {
+        const max = solBalance - minRentSol - txFeeSol;
+        setMaxWithdrawSol(max > 0 ? max : 0);
+    }, [solBalance, minRentSol, txFeeSol]);
 
     // Quote for manual buy
     useEffect(() => {
@@ -342,8 +392,15 @@ export default function TradingBot({
 
     const handleWithdrawSolClick = async () => {
         const amount = parseFloat(withdrawSolAmount);
-        if (isNaN(amount) || amount <= 0 || !withdrawSolAddress) return addLog('Invalid amount or address for SOL withdrawal.');
-        if (amount > solBalance) return addLog('Insufficient SOL balance.');
+        setWithdrawError('');
+        if (isNaN(amount) || amount <= 0 || !withdrawSolAddress) {
+            setWithdrawError('Invalid amount or address.');
+            return;
+        }
+        if (amount > maxWithdrawSol) {
+            setWithdrawError('Amount exceeds available balance.');
+            return;
+        }
 
         setIsProcessing(true);
         addLog(`Withdrawing ${amount} SOL...`);
@@ -381,33 +438,8 @@ export default function TradingBot({
     };
 
       const handleMaxSolClick = async () => {
-    let feeSol = ESTIMATED_TX_FEE_SOL;
-    try {
-        const { blockhash } = await connection.getLatestBlockhash();
-        const message = new TransactionMessage({
-            payerKey: botWallet.publicKey,
-            recentBlockhash: blockhash,
-            instructions: [
-                SystemProgram.transfer({
-                    fromPubkey: botWallet.publicKey,
-                    toPubkey: botWallet.publicKey,
-                    lamports: 1, 
-                }),
-            ],
-        }).compileToV0Message();
-        
-        const feeResponse = await connection.getFeeForMessage(message);
-
-         const response = await connection.getFeeForMessage(message);
-        if (response !== null) {
-            feeSol = Number(response.value) / LAMPORTS_PER_SOL;
-        }
-    } catch (e) {
-        console.warn('Failed to fetch network fee, using fallback.', e);
-    }
-     const max = Math.max(0, solBalance - feeSol);
-    setWithdrawSolAmount(max.toFixed(6));
-};
+    setWithdrawSolAmount(maxWithdrawSol.toFixed(6));
+}; 
 
     const handleMaxTokenClick = () => {
         setWithdrawTokenAmount(tokenBalance.toFixed(6));
@@ -415,9 +447,20 @@ export default function TradingBot({
 
     return (
         <div className="bg-gray-900 border border-gray-700 rounded-lg p-6 space-y-6">
-            <div>
-                <h3 className="text-lg font-bold text-white">Bot Instance Controller</h3>
-                <p className="text-xs font-mono text-gray-400 break-all">{botPublicKeyString}</p>
+            <div className="flex justify-between items-start">
+                <div>
+                    <h3 className="text-lg font-bold text-white">Bot Instance Controller</h3>
+                    <p
+                        className="text-xs font-mono text-gray-400 break-all cursor-pointer"
+                        onClick={() => navigator.clipboard.writeText(botPublicKeyString)}
+                        title="Click to copy"
+                    >
+                        {botPublicKeyString}
+                    </p>
+                </div>
+                <span className="text-lg font-bold bg-gradient-to-r from-purple-400 to-blue-400 bg-clip-text text-transparent">
+                    {index}
+                </span>
             </div>
 
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-center">
@@ -436,21 +479,27 @@ export default function TradingBot({
                 </div>
             </div>
 
-            <div className="bg-gray-800 p-4 rounded-lg">
-                <div className="flex items-center justify-between">
-                    <h4 className={`font-bold transition-colors ${isLogicEnabled ? 'text-green-400' : 'text-gray-200'}`}>
-                        {isLogicEnabled ? 'Automated Logic is ON' : 'Automated Logic is OFF'}
+            <div className="bg-gray-800 rounded-lg">
+                <div className="p-4 flex justify-between items-center">
+                    <h4 className="font-bold flex items-center gap-2">
+                        <span className={`w-3 h-3 rounded-full ${isLogicEnabled ? 'bg-green-400' : 'bg-red-500'}`}></span>
+                        <span>{isLogicEnabled ? 'Automated Logic ON' : 'Automated Logic OFF'}</span>
                     </h4>
+                    <button
+                        onClick={() => !isLogicEnabled && setIsManualOpen(!isManualOpen)}
+                        disabled={isLogicEnabled}
+                        className={`transition-transform ${isManualOpen ? 'rotate-180' : ''} ${isLogicEnabled ? 'opacity-50 cursor-default' : ''}`}
+                    >
+                        ▼
+                    </button>
                 </div>
-            </div>
-
-            {!isLogicEnabled && (
-                <div className="bg-gray-800 p-4 rounded-lg space-y-6">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                            <label className="block text-gray-400 text-sm mb-1">Buy Amount (SOL)</label>
-                            <input type="number" value={buyAmount} onChange={e => setBuyAmount(e.target.value)} className="w-full p-2 bg-gray-700 border border-gray-600 rounded text-white" step="any" min="0" />
-                            <p className="text-gray-500 text-xs mt-1">Available: <span className="cursor-pointer hover:underline" onClick={() => setBuyAmount(solBalance.toFixed(6))}>{solBalance.toFixed(6)}</span></p>
+            {!isLogicEnabled && isManualOpen && (
+                    <div className="p-4 pt-0 space-y-6 border-t border-gray-700">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-gray-400 text-sm mb-1">Buy Amount (SOL)</label>
+                                <input type="number" value={buyAmount} onChange={e => setBuyAmount(e.target.value)} className="w-full p-2 bg-gray-700 border border-gray-600 rounded text-white" step="any" min="0" />
+                                <p className="text-gray-500 text-xs mt-1">Available: <span className="cursor-pointer hover:underline" onClick={() => setBuyAmount(solBalance.toFixed(6))}>{solBalance.toFixed(6)}</span></p>
                             <div className="bg-gray-700 p-2 rounded mt-2 space-y-1 text-sm">
                                 <div className="flex justify-between"><span className="text-gray-400">Min Tokens Out:</span><span className="text-white">{buyQuote ? buyQuote.minOut.toFixed(6) : '0.000000'}</span></div>
                                 <div className="flex justify-between"><span className="text-gray-400">Price Impact:</span><span className={`font-medium ${buyQuote && buyQuote.priceImpact > 5 ? 'text-red-400' : buyQuote && buyQuote.priceImpact > 1 ? 'text-yellow-400' : 'text-green-400'}`}>{buyQuote ? `${buyQuote.priceImpact.toFixed(4)}%` : '0.00%'}</span></div>
@@ -477,12 +526,13 @@ export default function TradingBot({
                             {recommendedPriorityFee !== null && <p className="text-gray-500 text-xs mt-1">Suggested: <span className="cursor-pointer hover:underline" onClick={() => setPriorityFee(String(recommendedPriorityFee))}>{recommendedPriorityFee}</span></p>}
                         </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-4 pt-2 border-t border-gray-700">
-                        <button onClick={handleBuy} disabled={isProcessing} className="w-full px-4 py-2 bg-green-700 hover:bg-green-600 rounded transition text-white font-semibold disabled:bg-gray-500">Buy</button>
-                        <button onClick={handleSell} disabled={isProcessing} className="w-full px-4 py-2 bg-red-700 hover:bg-red-600 rounded transition text-white font-semibold disabled:bg-gray-500">Sell</button>
+                   <div className="grid grid-cols-2 gap-4 pt-2 border-t border-gray-700">
+                            <button onClick={handleBuy} disabled={isProcessing} className="w-full px-4 py-2 bg-green-700 hover:bg-green-600 rounded transition text-white font-semibold disabled:bg-gray-500">Buy</button>
+                            <button onClick={handleSell} disabled={isProcessing} className="w-full px-4 py-2 bg-red-700 hover:bg-red-600 rounded transition text-white font-semibold disabled:bg-gray-500">Sell</button>
+                        </div>
                     </div>
-                </div>
-            )}
+                )}
+            </div>
 
             <div className="bg-gray-800 p-4 rounded-lg">
                 <button onClick={() => setIsWithdrawVisible(!isWithdrawVisible)} className='w-full text-left font-bold text-gray-200'>
@@ -505,7 +555,11 @@ export default function TradingBot({
                                 <span className="cursor-pointer hover:underline" onClick={handleMaxSolClick}>Available: {solBalance.toFixed(6)}</span>
                                 <button type="button" onClick={handleMaxSolClick} className="text-blue-400 hover:underline">Max</button>
                             </div>
-                            <button onClick={handleWithdrawSolClick} disabled={isProcessing} className="w-full px-4 py-2 bg-green-600 hover:bg-green-700 rounded transition text-white disabled:bg-gray-500">Withdraw SOL</button>
+                            {withdrawError && <p className="text-red-500 text-xs">{withdrawError}</p>}
+                            {maxWithdrawSol <= 0 && !withdrawError && (
+                                <p className="text-yellow-400 text-xs">Balance too low to withdraw after fees.</p>
+                            )}
+                            <button onClick={handleWithdrawSolClick} disabled={isProcessing || maxWithdrawSol <= 0} className="w-full px-4 py-2 bg-green-600 hover:bg-green-700 rounded transition text-white disabled:bg-gray-500">Withdraw SOL</button>
                         </div>
                         <div className="space-y-3 md:col-span-2">
                             <h4 className='font-bold text-gray-200 text-sm'>Withdraw Tokens</h4>
