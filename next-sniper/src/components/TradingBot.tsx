@@ -405,8 +405,8 @@ export default function TradingBot({
     } catch (e) {
         console.warn('Failed to fetch network fee, using fallback.', e);
     }
-    const max = solBalance - feeSol;
-    setWithdrawSolAmount(max > 0 ? max.toFixed(6) : '0'); 
+     const max = Math.max(0, solBalance - feeSol);
+    setWithdrawSolAmount(max.toFixed(6));
 };
 
     const handleMaxTokenClick = () => {
