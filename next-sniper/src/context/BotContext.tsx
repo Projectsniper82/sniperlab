@@ -6,10 +6,10 @@ export interface BotInstance {
   id: string;
 }
 
-export type BotsByNetwork = {
-  devnet: BotInstance[];
-  mainnet: BotInstance[];
-};
+// Map each network to its associated trading bots. The keys must exactly match
+// NetworkContext's `NetworkType` so we can safely index with the current
+// network value throughout the app.
+export type BotsByNetwork = Record<NetworkType, BotInstance[]>;
 
 interface BotContextState {
   allBotsByNetwork: BotsByNetwork;
@@ -22,10 +22,13 @@ interface BotContextState {
   setIsTradingActive: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
-const BotContext = createContext<BotContextState | undefined>(undefined);
+export const BotContext = createContext<BotContextState | undefined>(undefined);
 
 export const BotProvider = ({ children }: { children: React.ReactNode }) => {
-  const [allBotsByNetwork, setAllBotsByNetwork] = useState<BotsByNetwork>({ devnet: [], mainnet: [] });
+  const [allBotsByNetwork, setAllBotsByNetwork] = useState<BotsByNetwork>({
+    devnet: [],
+    'mainnet-beta': [],
+  });
   const [botCode, setBotCode] = useState('');
   const [isAdvancedMode, setIsAdvancedMode] = useState(false);
   const [isTradingActive, setIsTradingActive] = useState(false);

@@ -15,20 +15,23 @@ import {
 import { useBotService } from '@/context/BotServiceContext';
 import { useBotLogic } from '@/context/BotLogicContext';
 import { useBotWalletReload } from '@/context/BotWalletReloadContext';
+import { useBotContext, BotInstance } from '@/context/BotContext';
 
 // Define the props the BotManager will accept from the page
 
 interface BotManagerProps {
     selectedTokenAddress: string;
     isLpActive: boolean;
+    bots: BotInstance[];
 }
 
-export default function BotManager({ selectedTokenAddress, isLpActive }: BotManagerProps) {
+export default function BotManager({ selectedTokenAddress, isLpActive, bots }: BotManagerProps) {
     const { connection, network } = useNetwork();
     const { publicKey: userPublicKey, sendTransaction } = useWallet();
     const { addBot, removeBot, startBot, stopBot } = useBotService();
     const { isLogicEnabled } = useBotLogic();
     const { registerReloader } = useBotWalletReload();
+    const { setAllBotsByNetwork } = useBotContext();
     const [botWallets, setBotWallets] = useState<Keypair[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [showConfirmModal, setShowConfirmModal] = useState(false);
@@ -37,12 +40,21 @@ export default function BotManager({ selectedTokenAddress, isLpActive }: BotMana
         setIsLoading(true);
         const loaded = loadBotWallets(network);
         setBotWallets(loaded);
+        // sync loaded wallets with global context
+        setAllBotsByNetwork(prev => ({
+            ...prev,
+            [network]: loaded.map(w => ({ id: w.publicKey.toBase58() }))
+        }));
         setIsLoading(false);
-     registerReloader(() => {
+        registerReloader(() => {
             const refreshed = loadBotWallets(network);
             setBotWallets(refreshed);
+            setAllBotsByNetwork(prev => ({
+                ...prev,
+                [network]: refreshed.map(w => ({ id: w.publicKey.toBase58() }))
+            }));
         });
-    }, [network, registerReloader]);
+    }, [network, registerReloader, setAllBotsByNetwork]);
 
     useEffect(() => {
         botWallets.forEach(w => addBot(w));
@@ -60,12 +72,18 @@ export default function BotManager({ selectedTokenAddress, isLpActive }: BotMana
         const updated = [...botWallets, newWallet];
         saveBotWallets(network, updated);
         setBotWallets(updated);
+            // update global bot list
+        setAllBotsByNetwork(prev => ({
+            ...prev,
+            [network]: [...prev[network], { id: newWallet.publicKey.toBase58() }]
+        }));
     };
 
         const confirmAndClearWallets = () => {
         botWallets.forEach(w => removeBot(w.publicKey.toBase58()));
         clearBotWallets(network);
         setBotWallets([]);
+        setAllBotsByNetwork(prev => ({ ...prev, [network]: [] }));
         setShowConfirmModal(false);
     };
 
@@ -178,6 +196,27 @@ export default function BotManager({ selectedTokenAddress, isLpActive }: BotMana
                     </div>
                 </div>
 
+                <div className="bg-gray-800 p-4 rounded-lg border border-gray-700 mb-6">
+                    <h3 className="text-lg font-bold text-white mb-2">Bots for {network}</h3>
+                    <div className='space-x-2 mb-2'>
+                        <button onClick={() => setAllBotsByNetwork(prev => ({
+                                ...prev,
+                                [network]: [...prev[network], { id: crypto.randomUUID() }]
+                            }))}
+                            className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded">
+                            Add Bot
+                        </button>
+                    </div>
+                    {bots.length > 0 ? (
+                        <ul className="list-disc list-inside text-gray-300 text-xs space-y-1">
+                            {bots.map(b => (
+                                <li key={b.id} className="font-mono break-all">{b.id}</li>
+                            ))}
+                        </ul>
+                    ) : (
+                        <p className="text-gray-400 text-sm">No bots created for this network.</p>
+                    )}
+                </div>
                 {botWallets.length > 0 ? (
                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                        {botWallets.map((wallet, idx) => (

@@ -10,6 +10,7 @@ import { Keypair, LAMPORTS_PER_SOL, SystemProgram, Transaction, sendAndConfirmTr
 import { useToken } from '@/context/TokenContext';
 import { useBotLogic } from '@/context/BotLogicContext';
 import { useNetwork } from '@/context/NetworkContext';
+import { BotContext } from '@/context/BotContext';
 import { useGlobalLogs } from '@/context/GlobalLogContext';
 import { useBotWalletReload } from '@/context/BotWalletReloadContext';
 import { useBotService } from '@/context/BotServiceContext';
@@ -22,12 +23,14 @@ export default function TradingBotsPage() {
     const { isLogicEnabled, setIsLogicEnabled } = useBotLogic();
     const { logs, append } = useGlobalLogs();
     const { network, rpcUrl, connection } = useNetwork();
+    const { allBotsByNetwork, setAllBotsByNetwork } = useContext(BotContext);
     const [creationState, setCreationState] = useState<'idle' | 'processing'>('idle');
     const { reloadWallets } = useBotWalletReload();
 
     // FIX: Get the setter function from the context
     const { tokenAddress, isLpActive, setIsLpActive, setTokenAddress } = useToken();
 
+    const currentBots = allBotsByNetwork[network];
     // --- Placeholder for your LP fetching logic ---
     // You likely have a more complex version of this.
     // The key is to call setIsLpActive based on the result.
@@ -270,6 +273,7 @@ export default function TradingBotsPage() {
                 <BotManager
                     selectedTokenAddress={tokenAddress}
                     isLpActive={isLpActive}
+                   bots={currentBots} 
                 />
             </main>
         </div>
