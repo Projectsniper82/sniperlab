@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test:findpool": "tsx --env-file=.env.local scripts/findPoolTest.ts"
+    "test:findpool": "tsx --env-file=.env.local scripts/findPoolTest.ts",
+    "test": "node --test tests/*.js"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.31.1",
