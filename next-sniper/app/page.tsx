@@ -784,9 +784,116 @@ return (
                         {wallet && (
                             <button
                                 onClick={async () => {
-                                    // ... (Mint button logic - keep as is)
                                     console.log('[LOGGING PLAN - MINT START] Mint button clicked.');
-                                    // (existing mint logic remains unchanged)
+                                    if (wallet && wallet.publicKey) {
+                                        console.log('[LOGGING PLAN - MINT] Current HomePage wallet.publicKey.toString():', wallet.publicKey.toString());
+                                    }
+
+                                    if (!isPhantomWallet(wallet)) {
+                                        setNotification({ show: true, message: 'Wallet not compatible for minting. Check console.', type: 'error' });
+                                        setTimeout(() => setNotification({ show: false, message: '', type: '' }), 4000);
+                                        return;
+                                    }
+                                    if (network !== 'devnet') {
+                                        setNotification({ show: true, message: 'Token minting is only enabled on Devnet.', type: 'info' });
+                                        setTimeout(() => setNotification({ show: false, message: '', type: '' }), 3000);
+                                        return;
+                                    }
+
+                                    const pkForMinting = wallet.publicKey instanceof PublicKey
+                                        ? wallet.publicKey
+                                        : new PublicKey(wallet.publicKey.toString());
+                                    console.log('[MINT FIX] pkForMinting for adapter:', pkForMinting.toBase58());
+
+                                    const walletForMintingAdapter: StrictPhantomWalletForMinting = {
+                                        publicKey: pkForMinting,
+                                        signTransaction: async (transactionToSign: Transaction): Promise<Transaction> => {
+                                            console.log('[MINT FIX - ADAPTER] signTransaction: Received legacy TX to sign:', transactionToSign);
+                                            if (!wallet || typeof wallet.signTransaction !== 'function') {
+                                                console.error('[MINT FIX - ADAPTER ERROR] Main wallet or signTransaction method is missing!');
+                                                throw new Error("Wallet or signTransaction method missing from main wallet object.");
+                                            }
+                                            const signedResultFromWallet = await wallet.signTransaction(transactionToSign);
+                                            console.log('[MINT FIX - ADAPTER] signTransaction: Wallet returned signedResultFromWallet:', signedResultFromWallet);
+
+                                            if (signedResultFromWallet instanceof Transaction) {
+                                                console.log('[MINT FIX - ADAPTER] signTransaction: Wallet returned a direct Transaction instance.');
+                                                return signedResultFromWallet;
+                                            }
+                                            if (signedResultFromWallet instanceof VersionedTransaction) {
+                                                console.error('[MINT FIX - ADAPTER ERROR] Wallet returned VersionedTransaction, legacy expected.');
+                                                throw new Error("Wallet signed VersionedTransaction; legacy Transaction needed.");
+                                            }
+                                            interface SignedTransactionObject {
+                                                signatures?: Array<{ publicKey: { toString(): string }, signature: Uint8Array | Buffer | number[] }>;
+                                                feePayer?: { toString(): string }; recentBlockhash?: string;
+                                            }
+                                            const plainSignedTx = signedResultFromWallet as SignedTransactionObject;
+                                            if (plainSignedTx && typeof plainSignedTx === 'object' && plainSignedTx.signatures && plainSignedTx.feePayer && plainSignedTx.recentBlockhash) {
+                                                console.log('[MINT FIX - ADAPTER] Wallet returned plain object. Reconstructing legacy Transaction.');
+                                                const reconstructedTx = new Transaction({
+                                                    feePayer: new PublicKey(plainSignedTx.feePayer.toString()),
+                                                    recentBlockhash: plainSignedTx.recentBlockhash,
+                                                });
+                                                reconstructedTx.add(...transactionToSign.instructions);
+                                                if (Array.isArray(plainSignedTx.signatures)) {
+                                                    plainSignedTx.signatures.forEach((sigInfo) => {
+                                                        if (sigInfo.publicKey && sigInfo.signature) {
+                                                            reconstructedTx.addSignature(
+                                                                new PublicKey(sigInfo.publicKey.toString()),
+                                                                Buffer.isBuffer(sigInfo.signature) ? sigInfo.signature : Buffer.from(sigInfo.signature)
+                                                            );
+                                                        }
+                                                    });
+                                                }
+                                                return reconstructedTx;
+                                            } else {
+                                                console.error('[MINT FIX - ADAPTER ERROR] Wallet returned unexpected structure:', signedResultFromWallet);
+                                                throw new Error("Unrecognized transaction format after signing.");
+                                            }
+                                        },
+                                        signAllTransactions: async (transactionsToSign: Transaction[]): Promise<Transaction[]> => {
+                                            if (!wallet || typeof wallet.signAllTransactions !== 'function') throw new Error("Wallet signAllTransactions missing.");
+                                            const signedResults = await wallet.signAllTransactions(transactionsToSign);
+                                            if (!Array.isArray(signedResults) || signedResults.length !== transactionsToSign.length) throw new Error("Wallet signAllTransactions unexpected return.");
+                                            interface SignedTransactionObject { signatures?: Array<{ publicKey: { toString(): string }, signature: Uint8Array | Buffer | number[] }>; feePayer?: { toString(): string }; recentBlockhash?: string; }
+                                            return signedResults.map((item, index) => {
+                                                const originalTx = transactionsToSign[index];
+                                                if (item instanceof Transaction) return item;
+                                                if (item instanceof VersionedTransaction) throw new Error(`Versioned TX at index ${index} not supported for this mint.`);
+                                                const plainItem = item as SignedTransactionObject;
+                                                if (plainItem && plainItem.signatures && plainItem.feePayer && plainItem.recentBlockhash) {
+                                                    const reconTx = new Transaction({ feePayer: new PublicKey(plainItem.feePayer.toString()), recentBlockhash: plainItem.recentBlockhash });
+                                                    reconTx.add(...originalTx.instructions);
+                                                    if (Array.isArray(plainItem.signatures)) plainItem.signatures.forEach(si => { if (si.publicKey && si.signature) reconTx.addSignature(new PublicKey(si.publicKey.toString()), Buffer.isBuffer(si.signature) ? si.signature : Buffer.from(si.signature)) });
+                                                    return reconTx;
+                                                }
+                                                throw new Error(`Unrecognized TX format at index ${index}.`);
+                                            });
+                                        },
+                                        isPhantom: wallet.isPhantom,
+                                    };
+                                    console.log('[MINT FIX] walletForMintingAdapter created.');
+                                    setIsLoading(true);
+                                    console.log("[HomePage][setIsLoading] set to TRUE (FUNCTION_NAME)");
+
+                                    setNotification({ show: true, message: `Minting TestToken...`, type: 'info' });
+                                    try {
+                                        const result = await mintTokenWithPhantomWallet(walletForMintingAdapter, connection, 'TestToken');
+                                        if (result?.mintAddress) {
+                                            setTokenAddress(result.mintAddress);
+                                            setNotification({ show: true, message: `Token minted! Address: ${result.mintAddress.substring(0, 10)}...`, type: 'success' });
+                                        } else { throw new Error('Minting did not return address.'); }
+                                    } catch (err: any) {
+                                        console.error('Mint error:', err);
+                                        setNotification({ show: true, message: `Mint Failed: ${err.message || 'Unknown'}`, type: 'error' });
+                                        setTimeout(() => setNotification({ show: false, message: '', type: '' }), 4000);
+                                    } finally {
+                                        setIsLoading(false);
+                                        console.log("[HomePage][setIsLoading] set to FALSE (FUNCTION_NAME)");
+
+                                        setTimeout(() => setNotification(prev => prev.message.includes("Minting TestToken") || prev.message.includes("Token minted!") ? { show: false, message: '', type: '' } : prev), 4000);
+                                    }
                                 }}
                                 disabled={isLoading || network === 'mainnet-beta'}
                                 className="px-3 py-1 text-sm bg-blue-600 rounded hover:bg-blue-700 transition text-white disabled:opacity-50 disabled:cursor-not-allowed"
