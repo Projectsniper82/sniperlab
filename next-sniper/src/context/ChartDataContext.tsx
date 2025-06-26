@@ -62,11 +62,13 @@ export const ChartDataProvider = ({ children }: { children: React.ReactNode }) =
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const solIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const isInitialLoadingRef = useRef(false);
+  const lastPriceRef = useRef(0);
 
   const resetState = () => {
     setRawPriceHistory([]);
     setMarketCapHistory([]);
     setLastPrice(0);
+    lastPriceRef.current = 0;
     setCurrentMarketCap(0);
     setCurrentLpValue(0);
     setErrorMsg('');
@@ -101,6 +103,7 @@ export const ChartDataProvider = ({ children }: { children: React.ReactNode }) =
       return updated.length > MAX_RAW_TICKS ? updated.slice(-MAX_RAW_TICKS) : updated;
     });
     setLastPrice(price);
+    lastPriceRef.current = price;
     setCurrentMarketCap(marketCap);
   }, []);
 
@@ -118,8 +121,9 @@ export const ChartDataProvider = ({ children }: { children: React.ReactNode }) =
 
       let priceNum: number;
       let marketCapNum: number;
+      const prevPrice = lastPriceRef.current;
       if (tokenReserve.isZero()) {
-        priceNum = lastPrice || 0;
+       priceNum = prevPrice || 0;
         marketCapNum = 0;
         setCurrentLpValue(solReserve.toNumber());
       } else {
@@ -143,7 +147,7 @@ export const ChartDataProvider = ({ children }: { children: React.ReactNode }) =
       setIsInitialLoading(false);
       isInitialLoadingRef.current = false;
     }
-  }, [lastPrice, processNewData]);
+  }, [processNewData]);
 
   const deriveVaultKeys = useCallback((mint: string, pool?: { vaultA?: string; vaultB?: string }) => {
     if (pool?.vaultA && pool?.vaultB) {

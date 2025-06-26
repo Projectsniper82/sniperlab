@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useState, useMemo, useCallback } from 'react'
+import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import {
   ComposedChart, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine,
  ResponsiveContainer, Scatter, Line, Area, Brush 
@@ -119,6 +119,11 @@ export default function LiveTokenChart({
         stopTracking,
     } = useChartData();
 
+    const startTrackingRef = useRef(startTracking);
+    const stopTrackingRef = useRef(stopTracking);
+
+    useEffect(() => { startTrackingRef.current = startTracking; }, [startTracking]);
+    useEffect(() => { stopTrackingRef.current = stopTracking; }, [stopTracking]);
   
     const initialBrushEndIndex = MAX_DISPLAY_POINTS - 1;
     const initialBrushStartIndex = Math.max(0, initialBrushEndIndex - INITIAL_BRUSH_POINTS_VISIBLE + 1);
@@ -133,11 +138,12 @@ export default function LiveTokenChart({
             const defaultEndIndex = MAX_DISPLAY_POINTS - 1;
             const defaultStartIndex = Math.max(0, defaultEndIndex - INITIAL_BRUSH_POINTS_VISIBLE + 1);
             setBrushWindow({ startIndex: defaultStartIndex, endIndex: defaultEndIndex });
-            startTracking(tokenMint, connection, tokenDecimals, tokenSupply, selectedPool);
+            startTrackingRef.current(tokenMint, connection, tokenDecimals, tokenSupply, selectedPool);
+            return () => { stopTrackingRef.current(); };
         } else {
-            stopTracking();
+            stopTrackingRef.current();
         }
-    }, [tokenMint, tokenDecimals, connection, tokenSupply, selectedPool, startTracking, stopTracking]);
+    }, [tokenMint, tokenDecimals, connection, tokenSupply, selectedPool]);
 
     useEffect(() => {
         console.log(`LiveTokenChart: Interval changed to ${selectedCandleIntervalMs / 1000}s. Re-aggregating.`);
