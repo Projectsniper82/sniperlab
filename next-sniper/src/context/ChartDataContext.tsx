@@ -63,6 +63,8 @@ export const ChartDataProvider = ({ children }: { children: React.ReactNode }) =
   const solIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const isInitialLoadingRef = useRef(false);
   const lastPriceRef = useRef(0);
+  const lastTrackedMintRef = useRef<string>('');
+  const lastTrackedConnectionRef = useRef<Connection | null>(null);
 
   const resetState = () => {
     setRawPriceHistory([]);
@@ -170,16 +172,20 @@ export const ChartDataProvider = ({ children }: { children: React.ReactNode }) =
 
   const startTracking = useCallback(
     (mint: string, connection: Connection, decimals: number, supply: string, pool?: { vaultA?: string; vaultB?: string }) => {
+      const isNewToken = lastTrackedMintRef.current !== mint;
+      const isNewConnection = lastTrackedConnectionRef.current !== connection;
+
       tokenMintRef.current = mint;
       decimalsRef.current = decimals;
       supplyRef.current = supply;
       connectionRef.current = connection;
       selectedPoolRef.current = pool;
       vaultKeysRef.current = deriveVaultKeys(mint, pool);
-      resetState();
-      setIsInitialLoading(true);
-      isInitialLoadingRef.current = true;
-
+       if (isNewToken || isNewConnection) {
+        resetState();
+        setIsInitialLoading(true);
+        isInitialLoadingRef.current = true;
+      }
       if (!solIntervalRef.current) {
         fetchSolPrice();
         solIntervalRef.current = setInterval(fetchSolPrice, 60000);
@@ -188,6 +194,8 @@ export const ChartDataProvider = ({ children }: { children: React.ReactNode }) =
         intervalRef.current = setInterval(fetchReserves, POLLING_INTERVAL_MS);
       }
       fetchReserves();
+      lastTrackedMintRef.current = mint;
+      lastTrackedConnectionRef.current = connection;
     },
     [deriveVaultKeys, fetchReserves, fetchSolPrice]
   );
