@@ -1,19 +1,13 @@
 'use client'
 
 import React, { useEffect, useState, useMemo, useCallback } from 'react'
-import { PublicKey } from '@solana/web3.js'
-import { getAccount } from '@solana/spl-token'
 import {
   ComposedChart, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine,
-  ResponsiveContainer, Scatter, Line, Area, Brush 
+ ResponsiveContainer, Scatter, Line, Area, Brush 
 } from 'recharts'
-import Decimal from 'decimal.js'
-import { getCreatePoolKeys } from '@raydium-io/raydium-sdk-v2'
+import { useChartData } from '@/context/ChartDataContext'
 
 // --- Constants ---
-const CPMM_PROGRAM_ID = new PublicKey('CPMDWBwJDtYax9qW7AyRuVC19Cc4L4Vcy4n2BHAbHkCW');
-const FEE_CONFIG_ID = new PublicKey('9zSzfkYy6awexsHvmggeH36pfVUdDGyCcwmjT3AQPBj6');
-Decimal.set({ precision: 50 });
 const INITIAL_CANDLE_INTERVAL_MS = 60 * 1000; // Default to 1 minute
 const POLLING_INTERVAL_MS = 5 * 1000;       // Fetch price every 5s
 const MAX_DISPLAY_POINTS = 150;       // Max candles/points shown in main chart history
@@ -109,17 +103,22 @@ export default function LiveTokenChart({
     const [selectedCandleIntervalMs, setSelectedCandleIntervalMs] = useState(INITIAL_CANDLE_INTERVAL_MS);
     const [chartMode, setChartMode] = useState('price'); 
     const [ohlcData, setOhlcData] = useState([]);
-    const [currentCandle, setCurrentCandle] = useState(null); 
-    const [marketCapHistory, setMarketCapHistory] = useState([]);
-    const [rawPriceHistory, setRawPriceHistory] = useState([]); 
-    const [lastPrice, setLastPrice] = useState(0);
-    const [currentMarketCap, setCurrentMarketCap] = useState(0);
-    const [currentLpValue, setCurrentLpValue] = useState(0);
-    const [solUsdPrice, setSolUsdPrice] = useState(null);
-    const [vaultKeys, setVaultKeys] = useState(null);
-    const [isLoadingSolPrice, setIsLoadingSolPrice] = useState(true);
-    const [errorMsg, setErrorMsg] = useState('');
-    const [isInitialLoading, setIsInitialLoading] = useState(true);
+   const [currentCandle, setCurrentCandle] = useState(null);
+
+    const {
+        rawPriceHistory,
+        marketCapHistory,
+        lastPrice,
+        currentMarketCap,
+        currentLpValue,
+        solUsdPrice,
+        isLoadingSolPrice,
+        errorMsg,
+        isInitialLoading,
+        startTracking,
+        stopTracking,
+    } = useChartData();
+
   
     const initialBrushEndIndex = MAX_DISPLAY_POINTS - 1;
     const initialBrushStartIndex = Math.max(0, initialBrushEndIndex - INITIAL_BRUSH_POINTS_VISIBLE + 1);
@@ -130,113 +129,26 @@ export default function LiveTokenChart({
 
     useEffect(() => { 
         if (tokenMint && tokenDecimals !== undefined && tokenDecimals !== null) {
-            setIsInitialLoading(true); setErrorMsg('');
-            setOhlcData([]); setCurrentCandle(null); setMarketCapHistory([]); setRawPriceHistory([]); 
-            setLastPrice(0); setCurrentMarketCap(0); setCurrentLpValue(0);
+            setOhlcData([]); setCurrentCandle(null);
             const defaultEndIndex = MAX_DISPLAY_POINTS - 1;
             const defaultStartIndex = Math.max(0, defaultEndIndex - INITIAL_BRUSH_POINTS_VISIBLE + 1);
             setBrushWindow({ startIndex: defaultStartIndex, endIndex: defaultEndIndex });
-            try {
-                const mintA = new PublicKey('So11111111111111111111111111111111111111112');
-                const mintB = new PublicKey(tokenMint);
-                const keys = getCreatePoolKeys({ programId: CPMM_PROGRAM_ID, configId: FEE_CONFIG_ID, mintA, mintB });
-                setVaultKeys({ vaultA: keys.vaultA, vaultB: keys.vaultB });
-            } catch (e) { console.error("LiveTokenChart: Error deriving vault keys:", e); setErrorMsg("Failed to derive pool keys..."); setVaultKeys(null); setIsInitialLoading(false); }
-        } else { setVaultKeys(null); setOhlcData([]); setCurrentCandle(null); setMarketCapHistory([]); setRawPriceHistory([]); setIsInitialLoading(false); }
-    }, [tokenMint, tokenDecimals]);
+            startTracking(tokenMint, connection, tokenDecimals, tokenSupply, selectedPool);
+        } else {
+            stopTracking();
+        }
+    }, [tokenMint, tokenDecimals, connection, tokenSupply, selectedPool, startTracking, stopTracking]);
 
     useEffect(() => {
         console.log(`LiveTokenChart: Interval changed to ${selectedCandleIntervalMs / 1000}s. Re-aggregating.`);
         const historicalCandles = aggregateHistoricalCandles(rawPriceHistory, selectedCandleIntervalMs, MAX_DISPLAY_POINTS);
         setOhlcData(historicalCandles);
-        setCurrentCandle(null); 
-        setMarketCapHistory([]); 
+        setCurrentCandle(null);
         
         const newEndIndex = Math.max(0, historicalCandles.length - 1);
         const newStartIndex = Math.max(0, newEndIndex - INITIAL_BRUSH_POINTS_VISIBLE + 1); 
         setBrushWindow({ startIndex: newStartIndex, endIndex: newEndIndex });
     }, [selectedCandleIntervalMs, rawPriceHistory]);
-
-    useEffect(() => { 
-        const fetchSolPrice = async () => {
-            setIsLoadingSolPrice(true);
-            try { const response = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd'); if (!response.ok) { const errorText = await response.text().catch(() => "Could not read error text"); console.error(`LiveTokenChart: CoinGecko API error: ${response.status} ${response.statusText}`, errorText); throw new Error(`CoinGecko API error: ${response.status}`); } const priceData = await response.json(); if (priceData?.solana?.usd) { setSolUsdPrice(priceData.solana.usd); } else { console.error("LiveTokenChart: Invalid data format from CoinGecko:", priceData); throw new Error("Invalid data format from CoinGecko"); }
-            } catch (error) { console.error("LiveTokenChart: Failed to fetch SOL/USD price:", error.message); setSolUsdPrice(null); } finally { setIsLoadingSolPrice(false); }
-        };
-        fetchSolPrice(); const intervalId = setInterval(fetchSolPrice, 60000); return () => clearInterval(intervalId);
-    }, []);
-
-    const processNewLiveDataPoint = useCallback((newPrice, newMarketCap, timestamp) => { 
-        if (typeof newPrice !== 'number' || isNaN(newPrice)) { newPrice = lastPrice; }
-        if (typeof newMarketCap !== 'number' || isNaN(newMarketCap)) { newMarketCap = currentMarketCap; }
-        
-        setRawPriceHistory(prevRaw => {
-            const newTick = { timestamp, price: newPrice };
-            if (prevRaw.length > 0 && timestamp === prevRaw[prevRaw.length - 1].timestamp) {
-                return prevRaw;
-            }
-            const updatedRaw = [...prevRaw, newTick];
-            return updatedRaw.length > MAX_RAW_TICKS ? updatedRaw.slice(-MAX_RAW_TICKS) : updatedRaw;
-        });
-
-        setMarketCapHistory(prevHistory => {
-            const newPoint = { timestamp, marketCap: newMarketCap };
-            if (prevHistory.length > 0 && timestamp - prevHistory[prevHistory.length - 1].timestamp < POLLING_INTERVAL_MS / 2) { return prevHistory; }
-            const updatedHistory = [...prevHistory, newPoint];
-            return updatedHistory.length > MAX_DISPLAY_POINTS ? updatedHistory.slice(-MAX_DISPLAY_POINTS) : updatedHistory;
-        });
-        
-        setCurrentCandle(prevCandle => {
-            const currentPeriodStart = Math.floor(timestamp / selectedCandleIntervalMs) * selectedCandleIntervalMs;
-            if (!prevCandle || currentPeriodStart > prevCandle.timestamp) {
-                let finalizedCandles = []; if (prevCandle) { finalizedCandles.push({ timestamp: prevCandle.timestamp, open: prevCandle.open, high: prevCandle.high, low: prevCandle.low, close: prevCandle.currentClose, volume: prevCandle.volume, }); }
-                if (finalizedCandles.length > 0) {
-                    setOhlcData(prevOhlc => { 
-                        const updatedOhlc = [...prevOhlc, ...finalizedCandles]; 
-                        const uniqueTimestamps = new Set(); 
-                        const uniqueData = updatedOhlc.filter(item => { if (!uniqueTimestamps.has(item.timestamp)) { uniqueTimestamps.add(item.timestamp); return true; } return false; }); 
-                        const finalData = uniqueData.length > MAX_DISPLAY_POINTS ? uniqueData.slice(-MAX_DISPLAY_POINTS) : uniqueData; 
-                        setBrushWindow(prevBrushWindow => {
-                            const maxPossibleIndex = Math.max(0, finalData.length - 1);
-                            const desiredWindowSize = INITIAL_BRUSH_POINTS_VISIBLE;
-                            const newEndIndex = maxPossibleIndex;
-                            const newStartIndex = Math.max(0, newEndIndex - desiredWindowSize + 1);
-                            if (newStartIndex !== prevBrushWindow.startIndex || newEndIndex !== prevBrushWindow.endIndex) {
-                                return { startIndex: newStartIndex, endIndex: newEndIndex };
-                            }
-                            return prevBrushWindow; 
-                        });
-                        return finalData; 
-                    });
-                } return { timestamp: currentPeriodStart, open: newPrice, high: newPrice, low: newPrice, currentClose: newPrice, volume: 0, };
-            } else if (currentPeriodStart === prevCandle.timestamp) { return { ...prevCandle, high: Math.max(prevCandle.high, newPrice), low: Math.min(prevCandle.low, newPrice), currentClose: newPrice, }; }
-            return prevCandle;
-        });
-        
-        setLastPrice(newPrice); 
-        setCurrentMarketCap(newMarketCap);
-    }, [selectedCandleIntervalMs, lastPrice, currentMarketCap]);
-
-    const fetchReservesAndAggregate = useCallback(async () => { 
-        if (!vaultKeys || !connection || tokenDecimals === undefined || tokenSupply === undefined) { if (tokenMint) setErrorMsg("Pool details incomplete or connection missing."); setIsInitialLoading(false); return; }
-        try {
-            const acctA = await getAccount(connection, vaultKeys.vaultA, 'confirmed'); const solReserve = new Decimal(acctA.amount.toString()).div(1e9); const acctB = await getAccount(connection, vaultKeys.vaultB, 'confirmed'); const tokenReserve = new Decimal(acctB.amount.toString()).div(new Decimal(10).pow(tokenDecimals)); let priceNum; let marketCapNum;
-            if (tokenReserve.isZero()) { priceNum = lastPrice || 0; marketCapNum = 0; setCurrentLpValue(solReserve.toNumber()); } else { const priceDecimal = solReserve.div(tokenReserve); priceNum = priceDecimal.toNumber(); const uiSupply = new Decimal(tokenSupply.toString()).div(new Decimal(10).pow(tokenDecimals)); const marketCapDecimal = priceDecimal.mul(uiSupply); marketCapNum = marketCapDecimal.toNumber(); const totalLpValueSol = solReserve.plus(tokenReserve.mul(priceDecimal)); setCurrentLpValue(totalLpValueSol.toNumber()); }
-             processNewLiveDataPoint( isNaN(priceNum) ? 0 : priceNum, isNaN(marketCapNum) ? 0 : marketCapNum, Date.now()); 
-            if(isInitialLoading) setIsInitialLoading(false);
-            setErrorMsg(''); 
-        } catch (err) {
-            console.error(`LiveTokenChart: FetchReserves error for ${tokenMint}:`, err); const msg = err.message?.toLowerCase(); if (msg?.includes("could not find account") || msg?.includes("failed to get account")) { setErrorMsg(`Pool not found or not initialized for ${tokenMint?.substring(0,6)}...`); } else { setErrorMsg(`Error fetching pool data for ${tokenMint?.substring(0,6)}...`); } 
-            setIsInitialLoading(false);
-        }
-    }, [vaultKeys, connection, tokenDecimals, tokenSupply, processNewLiveDataPoint, lastPrice, currentMarketCap, tokenMint, isInitialLoading]);
-
-    useEffect(() => { 
-        if (vaultKeys && connection) { 
-            const intervalId = setInterval(fetchReservesAndAggregate, POLLING_INTERVAL_MS); 
-            return () => clearInterval(intervalId); 
-        } else { setIsInitialLoading(false); if (tokenMint) setErrorMsg("Pool details not available for chart."); }
-    }, [vaultKeys, connection, fetchReservesAndAggregate, tokenMint]);
 
     const chartSourceData = useMemo(() => { 
         if (chartMode === 'price') { const data = [...ohlcData]; if (currentCandle) { data.push({ ...currentCandle, close: currentCandle.currentClose }); } return data.filter(c => c && typeof c.timestamp === 'number' && typeof c.open === 'number').map((c, index) => ({...c, key: `ohlc-<span class="math-inline">\{c\.timestamp\}\-</span>{index}`})); } 
@@ -281,7 +193,6 @@ export default function LiveTokenChart({
     const renderChartContent = () => { 
         if (isInitialLoading && chartSourceData.length === 0 && !errorMsg) { return <div className="text-gray-400 text-center p-10">Loading initial pool data...</div>; }
         if (errorMsg && chartSourceData.length === 0) { return <div className="text-red-400 text-center p-10">{errorMsg}</div>; }
-        if (!vaultKeys && tokenMint && !errorMsg) { return <div className="text-gray-400 text-center p-10">Deriving pool keys...</div>; }
         if (chartSourceData.length === 0 && !errorMsg) { return <div className="text-gray-400 text-center p-10">No chart data available. Waiting for pool activity...</div>; }
 
         const currentDataLen = chartSourceData.length;

@@ -8,6 +8,7 @@ import { BotServiceProvider } from '@/context/BotServiceContext';
 import { BotLogicProvider } from '@/context/BotLogicContext';
 import { GlobalLogProvider } from '@/context/GlobalLogContext';
 import { BotWalletReloadProvider } from '@/context/BotWalletReloadContext';
+import { ChartDataProvider } from '@/context/ChartDataContext';
 import '@solana/wallet-adapter-react-ui/styles.css';
 
 export const metadata = {
@@ -21,17 +22,19 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <NetworkProvider>
           <TokenProvider>
-            <BotServiceProvider>
-              <BotLogicProvider>
-                <AppWalletProvider>
-                  <GlobalLogProvider>
-                     <BotWalletReloadProvider>
-                      {children}
-                    </BotWalletReloadProvider>
-                  </GlobalLogProvider>
-                </AppWalletProvider>
-              </BotLogicProvider>
-            </BotServiceProvider>
+           <ChartDataProvider>
+              <BotServiceProvider>
+                <BotLogicProvider>
+                  <AppWalletProvider>
+                    <GlobalLogProvider>
+                       <BotWalletReloadProvider>
+                        {children}
+                      </BotWalletReloadProvider>
+                    </GlobalLogProvider>
+                  </AppWalletProvider>
+                </BotLogicProvider>
+              </BotServiceProvider>
+            </ChartDataProvider>
           </TokenProvider>
         </NetworkProvider>
       </body>
