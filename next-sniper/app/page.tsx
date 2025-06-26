@@ -162,9 +162,6 @@ export default function HomePage() {
     const [isLoading, setIsLoading] = useState(false);
     const [simPoolRefresh, setSimPoolRefresh] = useState(0);
 
-    useEffect(() => {
-    }, [isLoading]);
-
     const [errorMessage, setErrorMessage] = useState('');
     const [notification, setNotification] = useState<{
         show: boolean; message: string; type: NotificationType; id?: number;

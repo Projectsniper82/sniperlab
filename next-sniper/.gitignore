@@ -175,4 +175,6 @@ dist
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
-# public/workers
+# Wallet key files
+my_wallet_keypair.json
+phantom-keypair.json
