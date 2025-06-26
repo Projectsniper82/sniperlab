@@ -61,6 +61,7 @@ export const ChartDataProvider = ({ children }: { children: React.ReactNode }) =
   const vaultKeysRef = useRef<VaultKeys | null>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const solIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const isInitialLoadingRef = useRef(false);
 
   const resetState = () => {
     setRawPriceHistory([]);
@@ -70,6 +71,7 @@ export const ChartDataProvider = ({ children }: { children: React.ReactNode }) =
     setCurrentLpValue(0);
     setErrorMsg('');
     setIsInitialLoading(true);
+    isInitialLoadingRef.current = true;
   };
 
   const fetchSolPrice = useCallback(async () => {
@@ -131,13 +133,17 @@ export const ChartDataProvider = ({ children }: { children: React.ReactNode }) =
       }
       processNewData(isNaN(priceNum) ? 0 : priceNum, isNaN(marketCapNum) ? 0 : marketCapNum, Date.now());
       setErrorMsg('');
-      if (isInitialLoading) setIsInitialLoading(false);
+      if (isInitialLoadingRef.current) {
+        setIsInitialLoading(false);
+        isInitialLoadingRef.current = false;
+      }
     } catch (err) {
       console.error('ChartDataProvider: fetchReserves error', err);
       setErrorMsg('Error fetching pool data');
       setIsInitialLoading(false);
+      isInitialLoadingRef.current = false;
     }
-  }, [lastPrice, processNewData, isInitialLoading]);
+  }, [lastPrice, processNewData]);
 
   const deriveVaultKeys = useCallback((mint: string, pool?: { vaultA?: string; vaultB?: string }) => {
     if (pool?.vaultA && pool?.vaultB) {
@@ -167,6 +173,8 @@ export const ChartDataProvider = ({ children }: { children: React.ReactNode }) =
       selectedPoolRef.current = pool;
       vaultKeysRef.current = deriveVaultKeys(mint, pool);
       resetState();
+      setIsInitialLoading(true);
+      isInitialLoadingRef.current = true;
 
       if (!solIntervalRef.current) {
         fetchSolPrice();
@@ -175,6 +183,7 @@ export const ChartDataProvider = ({ children }: { children: React.ReactNode }) =
       if (!intervalRef.current) {
         intervalRef.current = setInterval(fetchReserves, POLLING_INTERVAL_MS);
       }
+      fetchReserves();
     },
     [deriveVaultKeys, fetchReserves, fetchSolPrice]
   );
