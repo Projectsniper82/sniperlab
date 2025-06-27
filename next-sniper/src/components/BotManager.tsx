@@ -16,6 +16,8 @@ import { useBotService } from '@/context/BotServiceContext';
 import { useBotLogic } from '@/context/BotLogicContext';
 import { useBotWalletReload } from '@/context/BotWalletReloadContext';
 import { useBotContext, BotInstance } from '@/context/BotContext';
+import { compileStrategy } from '@/utils/tradingStrategy';
+
 
 // Define the props the BotManager will accept from the page
 
@@ -31,7 +33,7 @@ export default function BotManager({ selectedTokenAddress, isLpActive, bots }: B
     const { addBot, removeBot, startBot, stopBot } = useBotService();
     const { isLogicEnabled } = useBotLogic();
     const { registerReloader } = useBotWalletReload();
-    const { setAllBotsByNetwork, isTradingActive, setIsTradingActive } = useBotContext();
+    const { setAllBotsByNetwork, isTradingActive, setIsTradingActive, botCode } = useBotContext();
     const [botWallets, setBotWallets] = useState<Keypair[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [showConfirmModal, setShowConfirmModal] = useState(false);
@@ -61,11 +63,13 @@ export default function BotManager({ selectedTokenAddress, isLpActive, bots }: B
     }, [botWallets, addBot]);
 
     useEffect(() => {
-        botWallets.forEach(w => {
-            const id = w.publicKey.toBase58();
-            if (isLogicEnabled) startBot(id); else stopBot(id);
-        });
-    }, [isLogicEnabled, botWallets, startBot, stopBot]);
+        const strategy = compileStrategy(botCode);
+        if (isTradingActive) {
+            botWallets.forEach(w => startBot(w.publicKey.toBase58(), strategy));
+        } else {
+            botWallets.forEach(w => stopBot(w.publicKey.toBase58()));
+        }
+    }, [isTradingActive, botWallets, botCode, startBot, stopBot]);
 
     const handleCreateBotWallet = () => {
         const newWallet = generateBotWallet();
