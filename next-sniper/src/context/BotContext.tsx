@@ -91,7 +91,10 @@ export const BotProvider = ({ children }: { children: React.ReactNode }) => {
     solUsdPrice,
   ]);
 
-  const startTrading = useCallback(() => setIsTradingActive(true), []);
+   const startTrading = useCallback(() => {
+    setIsTradingActive(true);
+    runBotLogicRef.current?.();
+  }, []);
   const stopTrading = useCallback(() => setIsTradingActive(false), []);
 
   useEffect(() => {
