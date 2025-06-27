@@ -33,7 +33,7 @@ export default function BotManager({ selectedTokenAddress, isLpActive, bots }: B
     const { addBot, removeBot, startBot, stopBot } = useBotService();
     const { isLogicEnabled } = useBotLogic();
     const { registerReloader } = useBotWalletReload();
-    const { setAllBotsByNetwork, isTradingActive, setIsTradingActive, botCode } = useBotContext();
+    const { setAllBotsByNetwork, isTradingActive, startTrading, stopTrading, botCode } = useBotContext();
     const [botWallets, setBotWallets] = useState<Keypair[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [showConfirmModal, setShowConfirmModal] = useState(false);
@@ -225,7 +225,9 @@ export default function BotManager({ selectedTokenAddress, isLpActive, bots }: B
                  {isLogicEnabled && (
                     <div className="mb-6">
                         <button
-                            onClick={() => setIsTradingActive(prev => !prev)}
+                            onClick={() =>
+                                isTradingActive ? stopTrading() : startTrading()
+                            }
                             className={`w-full px-4 py-2 font-bold rounded ${isTradingActive ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'} text-white`}
                         >
                             {isTradingActive ? 'Stop Trading' : 'Start Trading'}
