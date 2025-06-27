@@ -269,14 +269,6 @@ export default function TradingBotsPage() {
         <div className="p-4 sm:p-6 text-white bg-gray-950 min-h-screen font-sans">
             <AppHeader />
             <main className="max-w-7xl mx-auto mt-4 space-y-8">
-                 <div className="flex justify-end">
-                    <button
-                        onClick={() => setIsTradingActive(prev => !prev)}
-                        className={`px-4 py-2 font-bold rounded ${isTradingActive ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'} text-white`}
-                    >
-                        {isTradingActive ? 'Stop Trading' : 'Start Trading'}
-                    </button>
-                </div>
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     <GlobalBotControls
                         isLogicEnabled={isLogicEnabled}
@@ -300,6 +292,8 @@ export default function TradingBotsPage() {
                         {logs.length > 0 ? logs.map((log, i) => <p key={i}><span className="text-gray-600 mr-2">{'>'}</span>{log}</p>) : <p className="text-gray-500">No global actions yet.</p>}
                     </div>
                 </div>
+
+
 
                 <BotManager
                     selectedTokenAddress={tokenAddress}
