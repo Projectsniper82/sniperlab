@@ -45,7 +45,10 @@ export const BotProvider = ({ children }: { children: React.ReactNode }) => {
 
   const runBotLogic = useCallback(() => {
     if (!workerRef.current) {
-      workerRef.current = new Worker('/workers/bot-worker.js');
+      workerRef.current = new Worker(
+        new URL('../../public/workers/bot-worker.js', import.meta.url),
+        { type: 'module' }
+      );
     }
     const bots = Object.values(allBotsByNetwork).flat();
     const context = {};
