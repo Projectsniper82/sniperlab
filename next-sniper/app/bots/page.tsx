@@ -39,10 +39,21 @@ export default function TradingBotsPage() {
     const handleSelectPreset = (preset: string) => {
         setBotCode(preset);
         setIsAdvancedMode(false);
+        const logMessage = preset.includes('market maker')
+            ? 'Market Maker preset selected; bots can access market mid-price and LP stats.'
+            : 'Default preset selected; bots run basic logic without extra market data.';
+        addLog(logMessage);
     };
 
     const handleToggleAdvancedMode = (checked: boolean) => {
         setIsAdvancedMode(checked);
+         if (checked) {
+            addLog(
+                'Advanced mode enabled; bots can access additional on-chain data including market price, volume, and liquidity.'
+            );
+        } else {
+            addLog('Advanced mode disabled.');
+        }
     };
 
     // FIX: Get the setter function from the context
