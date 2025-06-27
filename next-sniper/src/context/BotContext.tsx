@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState } from 'react';
-import type { NetworkType } from './NetworkContext';
+import type { NetworkType } from './NetworkContext'
 
 export interface BotInstance {
   id: string;
