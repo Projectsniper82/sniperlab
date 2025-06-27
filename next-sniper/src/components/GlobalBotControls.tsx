@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useState } from 'react';
+import AdvancedModeModal from './AdvancedModeModal';
+import { useGlobalLogs } from '@/context/GlobalLogContext';
 import { useBotContext } from '@/context/BotContext';
 const DEFAULT_PRESET = `exports.strategy = async (wallet, log) => {
   log('executing default strategy');
@@ -27,16 +29,26 @@ export default function GlobalBotControls({
     onToggleAdvancedMode,
 }: GlobalBotControlsProps) {
     const [isExpanded, setIsExpanded] = useState(false);
+    const [showAdvancedModal, setShowAdvancedModal] = useState(false);
     const { startTrading, stopTrading } = useBotContext();
+    const { append } = useGlobalLogs();
 
     const handleToggle = (checked: boolean) => {
         onToggleLogic(checked);
         if (checked) startTrading(); else stopTrading();
     };
 
+    const handleAdvancedChange = (checked: boolean) => {
+        if (checked) {
+            setShowAdvancedModal(true);
+        } else {
+            onToggleAdvancedMode(false);
+        }
+    };
+
     return (
         <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
-            {/* Header is always visible and acts as the toggle button */}
+            { }
             <div 
                 className="p-4 cursor-pointer flex justify-between items-center"
                 onClick={() => setIsExpanded(!isExpanded)}
@@ -96,7 +108,7 @@ export default function GlobalBotControls({
                             id="advanced-toggle"
                             type="checkbox"
                             checked={isAdvancedMode}
-                            onChange={(e) => onToggleAdvancedMode(e.target.checked)}
+                             onChange={(e) => handleAdvancedChange(e.target.checked)}
                         />
                         <label htmlFor="advanced-toggle" className="text-sm text-gray-200">Advanced Mode</label>
                     </div>
@@ -106,6 +118,16 @@ export default function GlobalBotControls({
                         </p>
                     )}
                 </div>
+            )}
+            {showAdvancedModal && (
+                <AdvancedModeModal
+                    onConfirm={() => {
+                        onToggleAdvancedMode(true);
+                        append('Advanced mode enabled');
+                        setShowAdvancedModal(false);
+                    }}
+                    onCancel={() => setShowAdvancedModal(false)}
+                />
             )}
         </div>
     );
