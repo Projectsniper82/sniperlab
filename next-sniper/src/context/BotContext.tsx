@@ -1,8 +1,16 @@
 'use client';
 
-import React, { createContext, useContext, useState, useRef, useCallback, useEffect } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useRef,
+  useCallback,
+  useEffect,
+} from 'react';
 import type { NetworkType } from './NetworkContext';
 import { useNetwork } from './NetworkContext';
+import { useChartData } from './ChartDataContext';
 
 // Template used when initializing new bot code in the editor
 const DEFAULT_BOT_CODE = `exports.strategy = async (wallet, log) => {
@@ -39,12 +47,16 @@ export const BotProvider = ({ children }: { children: React.ReactNode }) => {
     devnet: [],
     'mainnet-beta': [],
   });
-  const { network } = useNetwork();
+  const { network, connection } = useNetwork();
+  const { lastPrice, currentMarketCap, currentLpValue, solUsdPrice } =
+    useChartData();
   const [botCode, setBotCode] = useState(DEFAULT_BOT_CODE);
   const [isAdvancedMode, setIsAdvancedMode] = useState(false);
   const [isTradingActive, setIsTradingActive] = useState(false);
   const workerRef = useRef<Worker | null>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const runBotLogicRef = useRef<(() => void) | null>(null);
+
 
   const runBotLogic = useCallback(() => {
     if (!workerRef.current) {
@@ -54,17 +66,44 @@ export const BotProvider = ({ children }: { children: React.ReactNode }) => {
       );
     }
     const bots = allBotsByNetwork[network] || [];
-    const context = {};
-   workerRef.current.postMessage({ code: botCode, bots: bots.map(b => b.secret), context });
-   }, [allBotsByNetwork, botCode, network]);
+    const context = {
+      connection,
+      market: {
+        lastPrice,
+        currentMarketCap,
+        currentLpValue,
+        solUsdPrice,
+      },
+    };
+    workerRef.current.postMessage({
+      code: botCode,
+      bots: bots.map((b) => b.secret),
+      context,
+    });
+  }, [
+    allBotsByNetwork,
+    botCode,
+    network,
+    connection,
+    lastPrice,
+    currentMarketCap,
+    currentLpValue,
+    solUsdPrice,
+  ]);
 
   const startTrading = useCallback(() => setIsTradingActive(true), []);
   const stopTrading = useCallback(() => setIsTradingActive(false), []);
 
   useEffect(() => {
+    runBotLogicRef.current = runBotLogic;
+  }, [runBotLogic]);
+
+  useEffect(() => {
     if (isTradingActive) {
-      runBotLogic();
-      intervalRef.current = setInterval(runBotLogic, 5000);
+     runBotLogicRef.current?.();
+      intervalRef.current = setInterval(() => {
+        runBotLogicRef.current?.();
+      }, 5000);
     } else {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
@@ -79,7 +118,7 @@ export const BotProvider = ({ children }: { children: React.ReactNode }) => {
       if (intervalRef.current) clearInterval(intervalRef.current);
       if (workerRef.current) workerRef.current.terminate();
     };
-  }, [isTradingActive, runBotLogic]);
+  }, [isTradingActive]);
 
   const value: BotContextState = {
     allBotsByNetwork,

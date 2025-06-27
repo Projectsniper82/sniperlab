@@ -49,3 +49,17 @@ Wallets are generated directly in the browser when you start the bot creation pr
 Wallets are saved to local storage as soon as funding begins. Early saving
 prevents loss of generated wallets if a transfer fails. They are saved again
 once all transfers complete for confirmation.
+
+## Strategy Context
+
+When trading bots execute, a `context` object is passed to your strategy
+function. The object currently includes:
+
+- `connection` – the active `@solana/web3.js` [`Connection`](https://solana-labs.github.io/solana-web3.js/classes/Connection.html) instance.
+- `market` – basic market information with the following fields:
+  - `lastPrice` – latest observed token price.
+  - `currentMarketCap` – market capitalization derived from pool reserves.
+  - `currentLpValue` – total liquidity value in SOL.
+  - `solUsdPrice` – current SOL/USD price or `null` if unavailable.
+
+Strategies can inspect these values to make trading decisions.
