@@ -4,7 +4,7 @@ import React, { createContext, useContext, useState, useRef, useCallback, useEff
 import type { NetworkType } from './NetworkContext';
 
 // Template used when initializing new bot code in the editor
-const DEFAULT_BOT_CODE = `export const strategy = async (wallet, log) => {
+const DEFAULT_BOT_CODE = `exports.strategy = async (wallet, log) => {
   log('executing default strategy');
 };`;
 

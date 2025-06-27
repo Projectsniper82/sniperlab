@@ -23,7 +23,16 @@ export default function TradingBotsPage() {
     const { isLogicEnabled, setIsLogicEnabled } = useBotLogic();
     const { logs, append } = useGlobalLogs();
     const { network, rpcUrl, connection } = useNetwork();
-    const { allBotsByNetwork, setAllBotsByNetwork, botCode, setBotCode, isAdvancedMode, setIsAdvancedMode } = useBotContext();
+    const {
+        allBotsByNetwork,
+        setAllBotsByNetwork,
+        botCode,
+        setBotCode,
+        isAdvancedMode,
+        setIsAdvancedMode,
+        isTradingActive,
+        setIsTradingActive,
+    } = useBotContext();
     const [creationState, setCreationState] = useState<'idle' | 'processing'>('idle');
     const { reloadWallets } = useBotWalletReload();
 
@@ -260,6 +269,14 @@ export default function TradingBotsPage() {
         <div className="p-4 sm:p-6 text-white bg-gray-950 min-h-screen font-sans">
             <AppHeader />
             <main className="max-w-7xl mx-auto mt-4 space-y-8">
+                 <div className="flex justify-end">
+                    <button
+                        onClick={() => setIsTradingActive(prev => !prev)}
+                        className={`px-4 py-2 font-bold rounded ${isTradingActive ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'} text-white`}
+                    >
+                        {isTradingActive ? 'Stop Trading' : 'Start Trading'}
+                    </button>
+                </div>
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     <GlobalBotControls
                         isLogicEnabled={isLogicEnabled}

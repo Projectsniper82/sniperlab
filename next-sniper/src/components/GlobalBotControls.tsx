@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 
-const DEFAULT_PRESET = `export const strategy = async (wallet, log) => {
+const DEFAULT_PRESET = `exports.strategy = async (wallet, log) => {
   log('executing default strategy');
 };`;
 
