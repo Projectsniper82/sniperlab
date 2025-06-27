@@ -1,5 +1,4 @@
 import { Buffer } from './libs/buffer.js';
-import * as web3 from './libs/web3.js';
 
 console.log('[bot-worker] Worker script loaded');
 
@@ -12,6 +11,7 @@ self.onmessage = async (ev) => {
     if (!globalThis.Buffer) {
       globalThis.Buffer = Buffer;
     }
+    const web3 = await import('https://cdn.jsdelivr.net/npm/@solana/web3.js@1.98.2/lib/index.browser.esm.js');
     
     const wallets = bots.map((sk) => {
       try {
