@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState, useRef, useCallback, useEffect } from 'react';
 import type { NetworkType } from './NetworkContext';
+import { useNetwork } from './NetworkContext';
 
 // Template used when initializing new bot code in the editor
 const DEFAULT_BOT_CODE = `exports.strategy = async (wallet, log) => {
@@ -37,6 +38,7 @@ export const BotProvider = ({ children }: { children: React.ReactNode }) => {
     devnet: [],
     'mainnet-beta': [],
   });
+  const { network } = useNetwork();
   const [botCode, setBotCode] = useState(DEFAULT_BOT_CODE);
   const [isAdvancedMode, setIsAdvancedMode] = useState(false);
   const [isTradingActive, setIsTradingActive] = useState(false);
@@ -50,10 +52,10 @@ export const BotProvider = ({ children }: { children: React.ReactNode }) => {
         { type: 'module' }
       );
     }
-    const bots = Object.values(allBotsByNetwork).flat();
+    const bots = allBotsByNetwork[network] || [];
     const context = {};
     workerRef.current.postMessage({ code: botCode, bots, context });
-  }, [allBotsByNetwork, botCode]);
+   }, [allBotsByNetwork, botCode, network]);
 
   const startTrading = useCallback(() => setIsTradingActive(true), []);
   const stopTrading = useCallback(() => setIsTradingActive(false), []);
