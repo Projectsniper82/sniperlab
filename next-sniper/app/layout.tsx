@@ -22,23 +22,23 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en">
       <body>
         <NetworkProvider>
-          <BotProvider>
-            <TokenProvider>
-             <ChartDataProvider>
+          <ChartDataProvider>
+            <BotProvider>
+              <TokenProvider>
                 <BotServiceProvider>
                   <BotLogicProvider>
                     <AppWalletProvider>
                       <GlobalLogProvider>
-                         <BotWalletReloadProvider>
+                        <BotWalletReloadProvider>
                           {children}
                         </BotWalletReloadProvider>
                       </GlobalLogProvider>
                     </AppWalletProvider>
                   </BotLogicProvider>
                 </BotServiceProvider>
-              </ChartDataProvider>
-            </TokenProvider>
-          </BotProvider>
+              </TokenProvider>
+            </BotProvider>
+          </ChartDataProvider>
         </NetworkProvider>
       </body>
     </html>
