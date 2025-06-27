@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-
+import { useBotContext } from '@/context/BotContext';
 const DEFAULT_PRESET = `exports.strategy = async (wallet, log) => {
   log('executing default strategy');
 };`;
@@ -27,6 +27,12 @@ export default function GlobalBotControls({
     onToggleAdvancedMode,
 }: GlobalBotControlsProps) {
     const [isExpanded, setIsExpanded] = useState(false);
+    const { startTrading, stopTrading } = useBotContext();
+
+    const handleToggle = (checked: boolean) => {
+        onToggleLogic(checked);
+        if (checked) startTrading(); else stopTrading();
+    };
 
     return (
         <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
@@ -57,7 +63,7 @@ export default function GlobalBotControls({
                                     id="auto-trade-toggle"
                                     className="sr-only"
                                     checked={isLogicEnabled}
-                                    onChange={(e) => onToggleLogic(e.target.checked)} 
+                                    onChange={(e) => handleToggle(e.target.checked)} 
                                 />
                                 <div className={`block ${isLogicEnabled ? 'bg-green-600' : 'bg-gray-600'} w-14 h-8 rounded-full`}></div>
                                 <div className={`dot absolute left-1 top-1 bg-white w-6 h-6 rounded-full transition-transform ${isLogicEnabled ? 'translate-x-6' : ''}`}></div>
