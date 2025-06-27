@@ -10,7 +10,20 @@ interface BotLogicState {
 const BotLogicContext = createContext<BotLogicState | undefined>(undefined);
 
 export const BotLogicProvider = ({ children }: { children: ReactNode }) => {
-  const [isLogicEnabled, setIsLogicEnabled] = useState(false);
+ const [isLogicEnabled, setIsLogicEnabledState] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('isLogicEnabled') === 'true';
+    }
+    return false;
+  });
+
+  const setIsLogicEnabled = (value: boolean) => {
+    setIsLogicEnabledState(value);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('isLogicEnabled', value.toString());
+    }
+  };
+
   return (
     <BotLogicContext.Provider value={{ isLogicEnabled, setIsLogicEnabled }}>
       {children}
