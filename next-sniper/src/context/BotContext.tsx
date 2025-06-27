@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, useContext, useState, useRef, useCallback, useEffect } from 'react';
 import type { NetworkType } from './NetworkContext';
 
 // Template used when initializing new bot code in the editor
@@ -26,6 +26,8 @@ interface BotContextState {
   setIsAdvancedMode: React.Dispatch<React.SetStateAction<boolean>>;
   isTradingActive: boolean;
   setIsTradingActive: React.Dispatch<React.SetStateAction<boolean>>;
+  startTrading: () => void;
+  stopTrading: () => void;
 }
 
 export const BotContext = createContext<BotContextState | undefined>(undefined);
@@ -38,6 +40,40 @@ export const BotProvider = ({ children }: { children: React.ReactNode }) => {
   const [botCode, setBotCode] = useState(DEFAULT_BOT_CODE);
   const [isAdvancedMode, setIsAdvancedMode] = useState(false);
   const [isTradingActive, setIsTradingActive] = useState(false);
+  const workerRef = useRef<Worker | null>(null);
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  const runBotLogic = useCallback(() => {
+    if (!workerRef.current) {
+      workerRef.current = new Worker('/workers/bot-worker.js');
+    }
+    const bots = Object.values(allBotsByNetwork).flat();
+    const context = {};
+    workerRef.current.postMessage({ code: botCode, bots, context });
+  }, [allBotsByNetwork, botCode]);
+
+  const startTrading = useCallback(() => setIsTradingActive(true), []);
+  const stopTrading = useCallback(() => setIsTradingActive(false), []);
+
+  useEffect(() => {
+    if (isTradingActive) {
+      runBotLogic();
+      intervalRef.current = setInterval(runBotLogic, 5000);
+    } else {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+      if (workerRef.current) {
+        workerRef.current.terminate();
+        workerRef.current = null;
+      }
+    }
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      if (workerRef.current) workerRef.current.terminate();
+    };
+  }, [isTradingActive, runBotLogic]);
 
   const value: BotContextState = {
     allBotsByNetwork,
@@ -48,6 +84,8 @@ export const BotProvider = ({ children }: { children: React.ReactNode }) => {
     setIsAdvancedMode,
     isTradingActive,
     setIsTradingActive,
+    startTrading,
+    stopTrading,
   };
 
   return <BotContext.Provider value={value}>{children}</BotContext.Provider>;
