@@ -1,3 +1,6 @@
+import { Buffer } from './libs/buffer.js';
+import * as web3 from './libs/web3.js';
+
 console.log('[bot-worker] Worker script loaded');
 
 self.onmessage = async (ev) => {
@@ -7,11 +10,9 @@ self.onmessage = async (ev) => {
     // Provide window polyfill similar to walletCreator
     globalThis.window = self;
     if (!globalThis.Buffer) {
-      const { Buffer } = await import('https://cdn.jsdelivr.net/npm/buffer@6.0.3/+esm');
       globalThis.Buffer = Buffer;
     }
-    const web3 = await import('https://cdn.jsdelivr.net/npm/@solana/web3.js@1.98.2/lib/index.browser.esm.js');
-
+    
     const wallets = bots.map((sk) => {
       try {
         return web3.Keypair.fromSecretKey(Uint8Array.from(sk));

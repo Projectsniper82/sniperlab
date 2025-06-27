@@ -11,6 +11,7 @@ const DEFAULT_BOT_CODE = `exports.strategy = async (wallet, log) => {
 
 export interface BotInstance {
   id: string;
+  secret: number[];
 }
 
 // Map each network to its associated trading bots. The keys must exactly match
@@ -54,7 +55,7 @@ export const BotProvider = ({ children }: { children: React.ReactNode }) => {
     }
     const bots = allBotsByNetwork[network] || [];
     const context = {};
-    workerRef.current.postMessage({ code: botCode, bots, context });
+   workerRef.current.postMessage({ code: botCode, bots: bots.map(b => b.secret), context });
    }, [allBotsByNetwork, botCode, network]);
 
   const startTrading = useCallback(() => setIsTradingActive(true), []);

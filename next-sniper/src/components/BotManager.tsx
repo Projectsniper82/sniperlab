@@ -43,7 +43,7 @@ export default function BotManager({ selectedTokenAddress, isLpActive, bots }: B
         // sync loaded wallets with global context
         setAllBotsByNetwork(prev => ({
             ...prev,
-            [network]: loaded.map(w => ({ id: w.publicKey.toBase58() }))
+             [network]: loaded.map(w => ({ id: w.publicKey.toBase58(), secret: Array.from(w.secretKey) }))
         }));
         setIsLoading(false);
         registerReloader(() => {
@@ -51,7 +51,7 @@ export default function BotManager({ selectedTokenAddress, isLpActive, bots }: B
             setBotWallets(refreshed);
             setAllBotsByNetwork(prev => ({
                 ...prev,
-                [network]: refreshed.map(w => ({ id: w.publicKey.toBase58() }))
+                [network]: refreshed.map(w => ({ id: w.publicKey.toBase58(), secret: Array.from(w.secretKey) }))
             }));
         });
     }, [network, registerReloader, setAllBotsByNetwork]);
@@ -75,7 +75,7 @@ export default function BotManager({ selectedTokenAddress, isLpActive, bots }: B
             // update global bot list
         setAllBotsByNetwork(prev => ({
             ...prev,
-            [network]: [...prev[network], { id: newWallet.publicKey.toBase58() }]
+            [network]: [...prev[network], { id: newWallet.publicKey.toBase58(), secret: Array.from(newWallet.secretKey) }]
         }));
     };
 
@@ -201,7 +201,7 @@ export default function BotManager({ selectedTokenAddress, isLpActive, bots }: B
                     <div className='space-x-2 mb-2'>
                         <button onClick={() => setAllBotsByNetwork(prev => ({
                                 ...prev,
-                                [network]: [...prev[network], { id: crypto.randomUUID() }]
+                                 [network]: [...prev[network], { id: crypto.randomUUID(), secret: [] }]
                             }))}
                             className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded">
                             Add Bot

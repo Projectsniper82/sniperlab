@@ -9,10 +9,10 @@ declare global {
 // worker. The actual runtime script is fetched from jsDelivr, but we map its
 // types to the locally installed @solana/web3.js package so that compilation
 // succeeds without `cannot find module` errors.
-declare module 'https://cdn.jsdelivr.net/npm/@solana/web3.js@1.98.2/lib/index.browser.esm.js' {
+declare module '../public/workers/libs/web3.js' {
   export const Keypair: any;
 }
 
-declare module 'https://cdn.jsdelivr.net/npm/buffer@6.0.3/+esm' {
+declare module '../public/workers/libs/buffer.js' {
   export const Buffer: typeof import('buffer').Buffer;
 }
