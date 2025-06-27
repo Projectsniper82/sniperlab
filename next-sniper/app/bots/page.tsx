@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useCallback, useState, useContext } from 'react';
+import React, { useEffect, useCallback, useState } from 'react';
 import AppHeader from '@/components/AppHeader';
 import BotManager from '@/components/BotManager';
 import GlobalBotControls from '@/components/GlobalBotControls';
@@ -23,9 +23,18 @@ export default function TradingBotsPage() {
     const { isLogicEnabled, setIsLogicEnabled } = useBotLogic();
     const { logs, append } = useGlobalLogs();
     const { network, rpcUrl, connection } = useNetwork();
-   const { allBotsByNetwork, setAllBotsByNetwork } = useBotContext();
+    const { allBotsByNetwork, setAllBotsByNetwork, botCode, setBotCode, isAdvancedMode, setIsAdvancedMode } = useBotContext();
     const [creationState, setCreationState] = useState<'idle' | 'processing'>('idle');
     const { reloadWallets } = useBotWalletReload();
+
+    const handleSelectPreset = (preset: string) => {
+        setBotCode(preset);
+        setIsAdvancedMode(false);
+    };
+
+    const handleToggleAdvancedMode = (checked: boolean) => {
+        setIsAdvancedMode(checked);
+    };
 
     // FIX: Get the setter function from the context
     const { tokenAddress, isLpActive, setIsLpActive, setTokenAddress } = useToken();
@@ -255,6 +264,11 @@ export default function TradingBotsPage() {
                     <GlobalBotControls
                         isLogicEnabled={isLogicEnabled}
                         onToggleLogic={handleToggleLogic}
+                        botCode={botCode}
+                        setBotCode={setBotCode}
+                        onSelectPreset={handleSelectPreset}
+                        isAdvancedMode={isAdvancedMode}
+                        onToggleAdvancedMode={handleToggleAdvancedMode}
                     />
                     <WalletCreationManager
                          distributeFunds={handleStartCreation}

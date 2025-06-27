@@ -2,13 +2,30 @@
 
 import React, { useState } from 'react';
 
+const DEFAULT_PRESET = `export const strategy = async (wallet, log) => {
+  log('executing default strategy');
+};`;
+
 // Define the props for the component
 interface GlobalBotControlsProps {
     isLogicEnabled: boolean;
     onToggleLogic: (isEnabled: boolean) => void;
+    botCode: string;
+    setBotCode: (code: string) => void;
+    onSelectPreset: (preset: string) => void;
+    isAdvancedMode: boolean;
+    onToggleAdvancedMode: (checked: boolean) => void;
 }
 
-export default function GlobalBotControls({ isLogicEnabled, onToggleLogic }: GlobalBotControlsProps) {
+export default function GlobalBotControls({
+    isLogicEnabled,
+    onToggleLogic,
+    botCode,
+    setBotCode,
+    onSelectPreset,
+    isAdvancedMode,
+    onToggleAdvancedMode,
+}: GlobalBotControlsProps) {
     const [isExpanded, setIsExpanded] = useState(false);
 
     return (
@@ -35,11 +52,11 @@ export default function GlobalBotControls({ isLogicEnabled, onToggleLogic }: Glo
                         </label>
                         <div className="flex items-center cursor-pointer">
                             <div className="relative">
-                                <input 
-                                    type="checkbox" 
-                                    id="auto-trade-toggle" 
-                                    className="sr-only" 
-                                    checked={isLogicEnabled} 
+                                <input
+                                    type="checkbox"
+                                    id="auto-trade-toggle"
+                                    className="sr-only"
+                                    checked={isLogicEnabled}
                                     onChange={(e) => onToggleLogic(e.target.checked)} 
                                 />
                                 <div className={`block ${isLogicEnabled ? 'bg-green-600' : 'bg-gray-600'} w-14 h-8 rounded-full`}></div>
@@ -48,10 +65,40 @@ export default function GlobalBotControls({ isLogicEnabled, onToggleLogic }: Glo
                             <div className="ml-3 text-white font-bold">{isLogicEnabled ? 'ON' : 'OFF'}</div>
                         </div>
                     </div>
-                     <div className="text-xs text-gray-400 p-2 bg-gray-900 rounded-md">
-                        <p className='font-bold text-gray-300'>Future Settings:</p>
-                        <p>Global Stop-Loss, Take-Profit, and other logic settings will go here.</p>
+                     <div>
+                        <label className="block text-sm font-semibold text-gray-200 mb-1">Bot Code</label>
+                        <textarea
+                            className="w-full bg-gray-900 text-gray-200 p-2 rounded-md text-sm font-mono"
+                            rows={6}
+                            value={botCode}
+                            onChange={(e) => setBotCode(e.target.value)}
+                        />
                     </div>
+
+                    <div>
+                        <h4 className="font-semibold text-gray-200 mb-1">Presets</h4>
+                        <button
+                            className="px-2 py-1 text-sm bg-gray-700 rounded-md"
+                            onClick={() => onSelectPreset(DEFAULT_PRESET)}
+                        >
+                            Use Default Template
+                        </button>
+                    </div>
+
+                    <div className="flex items-center space-x-2">
+                        <input
+                            id="advanced-toggle"
+                            type="checkbox"
+                            checked={isAdvancedMode}
+                            onChange={(e) => onToggleAdvancedMode(e.target.checked)}
+                        />
+                        <label htmlFor="advanced-toggle" className="text-sm text-gray-200">Advanced Mode</label>
+                    </div>
+                    {isAdvancedMode && (
+                        <p className="text-xs text-red-400">
+                            Advanced mode executes custom code and may have compliance risks.
+                        </p>
+                    )}
                 </div>
             )}
         </div>

@@ -1,7 +1,12 @@
 'use client';
 
 import React, { createContext, useContext, useState } from 'react';
-import type { NetworkType } from './NetworkContext'
+import type { NetworkType } from './NetworkContext';
+
+// Template used when initializing new bot code in the editor
+const DEFAULT_BOT_CODE = `export const strategy = async (wallet, log) => {
+  log('executing default strategy');
+};`;
 
 export interface BotInstance {
   id: string;
@@ -30,7 +35,7 @@ export const BotProvider = ({ children }: { children: React.ReactNode }) => {
     devnet: [],
     'mainnet-beta': [],
   });
-  const [botCode, setBotCode] = useState('');
+  const [botCode, setBotCode] = useState(DEFAULT_BOT_CODE);
   const [isAdvancedMode, setIsAdvancedMode] = useState(false);
   const [isTradingActive, setIsTradingActive] = useState(false);
 
