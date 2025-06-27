@@ -4,9 +4,28 @@ import React, { useState } from 'react';
 import AdvancedModeModal from './AdvancedModeModal';
 import { useGlobalLogs } from '@/context/GlobalLogContext';
 import { useBotContext } from '@/context/BotContext';
+
 const DEFAULT_PRESET = `exports.strategy = async (wallet, log) => {
   log('executing default strategy');
 };`;
+
+const MARKET_MAKER_PRESET = `exports.strategy = async (wallet, log, context) => {
+  log('running market maker strategy');
+  const { market } = context;
+  if (!market || !market.getMidPrice) {
+    log('market data unavailable');
+    return;
+  }
+  const mid = await market.getMidPrice();
+  const spread = 0.005; // 0.5% total spread
+  const bid = mid * (1 - spread / 2);
+  const ask = mid * (1 + spread / 2);
+  await market.placeOrder(wallet, 'buy', bid, 1);
+  await market.placeOrder(wallet, 'sell', ask, 1);
+  log(\`placed buy at \${bid} and sell at \${ask}\`);
+
+};`;
+
 
 // Define the props for the component
 interface GlobalBotControlsProps {
@@ -100,6 +119,12 @@ export default function GlobalBotControls({
                             onClick={() => onSelectPreset(DEFAULT_PRESET)}
                         >
                             Use Default Template
+                        </button>
+                        <button
+                            className="px-2 py-1 text-sm bg-gray-700 rounded-md ml-2"
+                            onClick={() => onSelectPreset(MARKET_MAKER_PRESET)}
+                        >
+                            Market Maker Logic
                         </button>
                     </div>
 
