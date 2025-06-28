@@ -92,7 +92,7 @@ export default function GlobalBotControls({
                                 <input
                                     type="checkbox"
                                     id="auto-trade-toggle"
-                                    className="sr-only"
+                                    className="absolute inset-0 opacity-0 cursor-pointer"
                                     checked={isLogicEnabled}
                                     onChange={(e) => handleToggle(e.target.checked)} 
                                 />
