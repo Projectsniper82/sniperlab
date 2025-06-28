@@ -8,6 +8,7 @@ import React, {
   useCallback,
   useEffect,
 } from 'react';
+import { useGlobalLogs } from './GlobalLogContext';
 import type { NetworkType } from './NetworkContext';
 import { useNetwork } from './NetworkContext';
 import { useChartData } from './ChartDataContext';
@@ -56,7 +57,7 @@ export const BotProvider = ({ children }: { children: React.ReactNode }) => {
   const workerRef = useRef<Worker | null>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const runBotLogicRef = useRef<(() => void) | null>(null);
-
+  const { append } = useGlobalLogs();
 
   const runBotLogic = useCallback(() => {
     if (!workerRef.current) {
@@ -64,6 +65,21 @@ export const BotProvider = ({ children }: { children: React.ReactNode }) => {
         new URL('../../public/workers/bot-worker.js', import.meta.url),
         { type: 'module' }
       );
+       workerRef.current.onmessage = (ev) => {
+        const { log, error } = ev.data || {};
+        if (log) {
+          console.log('[bot-worker]', log);
+          append(log);
+        }
+        if (error) {
+          console.error('[bot-worker]', error);
+          append(`error: ${error}`);
+        }
+      };
+      workerRef.current.onerror = (e) => {
+        console.error('[bot-worker]', e.message);
+        append(`error: ${e.message}`);
+      };
     }
     const bots = allBotsByNetwork[network] || [];
     const context = {
