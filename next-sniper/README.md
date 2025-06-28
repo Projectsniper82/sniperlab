@@ -52,10 +52,12 @@ once all transfers complete for confirmation.
 
 ## Strategy Context
 
-When trading bots execute, a `context` object is passed to your strategy
+WWhen trading bots execute, a `context` object is passed to your strategy
 function. The object currently includes:
 
-- `connection` – the active `@solana/web3.js` [`Connection`](https://solana-labs.github.io/solana-web3.js/classes/Connection.html) instance.
+-`rpcUrl` – the RPC endpoint used for the current network. The worker will
+  reconstruct a `Connection` instance from this URL and expose it as
+  `context.connection` for your strategy.
 - `market` – basic market information with the following fields:
   - `lastPrice` – latest observed token price.
   - `currentMarketCap` – market capitalization derived from pool reserves.

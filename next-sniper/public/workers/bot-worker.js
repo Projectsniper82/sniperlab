@@ -3,7 +3,7 @@ import { Buffer } from './libs/buffer.js';
 console.log('[bot-worker] Worker script loaded');
 
 self.onmessage = async (ev) => {
-  const { code, bots = [], context } = ev.data || {};
+ const { code, bots = [], context = {} } = ev.data || {};
   console.log('[bot-worker] Received message', { bots: bots.length });
   try {
     // Provide window polyfill similar to walletCreator
@@ -12,6 +12,9 @@ self.onmessage = async (ev) => {
       globalThis.Buffer = Buffer;
     }
     const web3 = await import('https://cdn.jsdelivr.net/npm/@solana/web3.js@1.98.2/lib/index.browser.esm.js');
+    const { rpcUrl, ...restContext } = context;
+    const connection = new web3.Connection(rpcUrl, 'confirmed');
+    const workerContext = { ...restContext, rpcUrl, connection };
     
     const wallets = bots.map((sk) => {
       try {
@@ -28,7 +31,7 @@ self.onmessage = async (ev) => {
     const exports = {};
     // Execute the provided code in a function scope
     const fn = new Function('exports', 'context', code);
-    fn(exports, context);
+    fn(exports, workerContext);
 
     if (typeof exports.strategy !== 'function') {
       log('No strategy function exported as "strategy"');
@@ -37,7 +40,7 @@ self.onmessage = async (ev) => {
 
     for (const wallet of wallets) {
       try {
-        await exports.strategy(wallet, log, context);
+        await exports.strategy(wallet, log, workerContext);
       } catch (err) {
         log(`Error executing strategy for ${wallet.publicKey.toBase58()}: ${err?.message || err}`);
       }

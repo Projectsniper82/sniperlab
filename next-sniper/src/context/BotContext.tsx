@@ -47,7 +47,7 @@ export const BotProvider = ({ children }: { children: React.ReactNode }) => {
     devnet: [],
     'mainnet-beta': [],
   });
-  const { network, connection } = useNetwork();
+  const { network, rpcUrl } = useNetwork();
   const { lastPrice, currentMarketCap, currentLpValue, solUsdPrice } =
     useChartData();
   const [botCode, setBotCode] = useState(DEFAULT_BOT_CODE);
@@ -67,7 +67,7 @@ export const BotProvider = ({ children }: { children: React.ReactNode }) => {
     }
     const bots = allBotsByNetwork[network] || [];
     const context = {
-      connection,
+      rpcUrl,
       market: {
         lastPrice,
         currentMarketCap,
@@ -84,7 +84,7 @@ export const BotProvider = ({ children }: { children: React.ReactNode }) => {
     allBotsByNetwork,
     botCode,
     network,
-    connection,
+    rpcUrl,
     lastPrice,
     currentMarketCap,
     currentLpValue,
