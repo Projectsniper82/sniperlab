@@ -12,17 +12,19 @@ const DEFAULT_PRESET = `exports.strategy = async (wallet, log) => {
 const MARKET_MAKER_PRESET = `exports.strategy = async (wallet, log, context) => {
   log('running market maker strategy');
   const { market } = context;
-  if (!market || !market.getMidPrice) {
+  if (!market) {
     log('market data unavailable');
     return;
   }
-  const mid = await market.getMidPrice();
-  const spread = 0.005; // 0.5% total spread
-  const bid = mid * (1 - spread / 2);
-  const ask = mid * (1 + spread / 2);
-  await market.placeOrder(wallet, 'buy', bid, 1);
-  await market.placeOrder(wallet, 'sell', ask, 1);
-  log(\`placed buy at \${bid} and sell at \${ask}\`);
+  const { lastPrice, currentMarketCap, currentLpValue, solUsdPrice } = market;
+  log(\`last price: \${lastPrice} SOL\`);
+  if (solUsdPrice) {
+    const usd = (lastPrice * solUsdPrice).toFixed(4);
+    log(\`last price USD: \${usd}\`);
+  }
+  log(\`market cap: \${currentMarketCap} SOL\`);
+  log(\`LP value: \${currentLpValue} SOL\`);
+  // TODO: implement order placement logic using the data above
 
 };`;
 
