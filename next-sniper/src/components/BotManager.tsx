@@ -221,9 +221,17 @@ export default function BotManager({ selectedTokenAddress, isLpActive, bots }: B
                  {isLogicEnabled && (
                     <div className="mb-6">
                         <button
-                            onClick={() =>
-                                isTradingActive ? stopTrading() : startTrading()
-                            }
+                             onClick={() => {
+                                if (isTradingActive) {
+                                    stopTrading();
+                                } else {
+                                    if (!isLpActive) {
+                                        alert('Token has no liquidity pool. Please select a token with LP or create LP before trading.');
+                                        return;
+                                    }
+                                    startTrading();
+                                }
+                            }}
                             className={`w-full px-4 py-2 font-bold rounded ${isTradingActive ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'} text-white`}
                         >
                             {isTradingActive ? 'Stop Trading' : 'Start Trading'}
