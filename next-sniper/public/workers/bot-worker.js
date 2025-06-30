@@ -1,17 +1,19 @@
 import { Buffer } from './libs/buffer.js';
 
-console.log('[bot-worker] Worker script loaded');
+// Load web3 once and reuse the promise across messages
+const web3Promise = import(
+  'https://cdn.jsdelivr.net/npm/@solana/web3.js@1.98.2/lib/index.browser.esm.js'
+);
 
 self.onmessage = async (ev) => {
  const { code, bots = [], context = {} } = ev.data || {};
-  console.log('[bot-worker] Received message', { bots: bots.length });
   try {
     // Provide window polyfill similar to walletCreator
     globalThis.window = self;
     if (!globalThis.Buffer) {
       globalThis.Buffer = Buffer;
     }
-    const web3 = await import('https://cdn.jsdelivr.net/npm/@solana/web3.js@1.98.2/lib/index.browser.esm.js');
+    const web3 = await web3Promise;
     const { rpcUrl, systemState, ...restContext } = context;
   const connection = new web3.Connection(rpcUrl, 'confirmed');
   const workerContext = { ...restContext, rpcUrl, connection };

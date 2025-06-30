@@ -24,7 +24,11 @@ export const NetworkProvider = ({ children }: { children: ReactNode }) => {
   }, [network]);
 
   const connection = useMemo(() => {
-    console.log(`NetworkContext: Creating new connection for ${network} using RPC: ${rpcUrl}`);
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(
+        `NetworkContext: Creating new connection for ${network} using RPC: ${rpcUrl}`
+      );
+    }
     return new Connection(rpcUrl, 'confirmed');
   }, [rpcUrl, network]);
 

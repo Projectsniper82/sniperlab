@@ -74,19 +74,12 @@ export const BotProvider = ({ children }: { children: React.ReactNode }) => {
         new URL('../../public/workers/bot-worker.js', import.meta.url),
         { type: 'module' }
       );
-       workerRef.current.onmessage = (ev) => {
+      workerRef.current.onmessage = (ev) => {
         const { log, error } = ev.data || {};
-        if (log) {
-          console.log('[bot-worker]', log);
-          append(log);
-        }
-        if (error) {
-          console.error('[bot-worker]', error);
-          append(`error: ${error}`);
-        }
+        if (log) append(log);
+        if (error) append(`error: ${error}`);
       };
       workerRef.current.onerror = (e) => {
-        console.error('[bot-worker]', e.message);
         append(`error: ${e.message}`);
       };
     }

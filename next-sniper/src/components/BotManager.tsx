@@ -16,7 +16,6 @@ import { useBotService } from '@/context/BotServiceContext';
 import { useBotLogic } from '@/context/BotLogicContext';
 import { useBotWalletReload } from '@/context/BotWalletReloadContext';
 import { useBotContext, BotInstance } from '@/context/BotContext';
-import { compileStrategy } from '@/utils/tradingStrategy';
 import { useChartData } from '@/context/ChartDataContext';
 
 
@@ -31,7 +30,7 @@ interface BotManagerProps {
 export default function BotManager({ selectedTokenAddress, isLpActive, bots }: BotManagerProps) {
    const { connection, network, rpcUrl } = useNetwork();
     const { publicKey: userPublicKey, sendTransaction } = useWallet();
-    const { addBot, removeBot, startBot, stopBot } = useBotService();
+    const { addBot, removeBot } = useBotService();
     const { isLogicEnabled } = useBotLogic();
     const { registerReloader } = useBotWalletReload();
     const { setAllBotsByNetwork, isTradingActive, startTrading, stopTrading, botCode } = useBotContext();
@@ -63,24 +62,6 @@ export default function BotManager({ selectedTokenAddress, isLpActive, bots }: B
     useEffect(() => {
         botWallets.forEach(w => addBot(w));
     }, [botWallets, addBot]);
-
-    useEffect(() => {
-        const strategy = compileStrategy(botCode);
-        const context = {
-            rpcUrl,
-            market: {
-                lastPrice,
-                currentMarketCap,
-                currentLpValue,
-                solUsdPrice,
-            },
-        };
-        if (isTradingActive) {
-            botWallets.forEach(w => startBot(w.publicKey.toBase58(), strategy, context));
-        } else {
-            botWallets.forEach(w => stopBot(w.publicKey.toBase58()));
-        }
-    }, [isTradingActive, botWallets, botCode, startBot, stopBot, rpcUrl, lastPrice, currentMarketCap, currentLpValue, solUsdPrice]);
 
     const handleCreateBotWallet = async () => {
         const newWallet = generateBotWallet();
