@@ -20,7 +20,14 @@ import { useWallet } from '@solana/wallet-adapter-react';
 
 export default function TradingBotsPage() {
     const { publicKey, sendTransaction } = useWallet();
-    const { isLogicEnabled, setIsLogicEnabled } = useBotLogic();
+    const {
+        isLogicEnabled,
+        setIsLogicEnabled,
+        userStrategies,
+        handleSaveCurrentStrategy,
+        handleLoadStrategy,
+        handleDeleteStrategy,
+    } = useBotLogic();
     const { logs, append } = useGlobalLogs();
     const { network, rpcUrl, connection } = useNetwork();
     const {
@@ -289,6 +296,10 @@ export default function TradingBotsPage() {
                         onSelectPreset={handleSelectPreset}
                         isAdvancedMode={isAdvancedMode}
                         onToggleAdvancedMode={handleToggleAdvancedMode}
+                        userStrategies={userStrategies}
+                        onSaveCurrentStrategy={handleSaveCurrentStrategy}
+                        onLoadStrategy={handleLoadStrategy}
+                        onDeleteStrategy={handleDeleteStrategy}
                     />
                     <WalletCreationManager
                          distributeFunds={handleStartCreation}

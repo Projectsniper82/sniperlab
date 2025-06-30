@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import AdvancedModeModal from './AdvancedModeModal';
 import { useGlobalLogs } from '@/context/GlobalLogContext';
 import { useBotContext } from '@/context/BotContext';
+import { UserStrategy } from '@/context/BotLogicContext';
 
 const DEFAULT_PRESET = `exports.strategy = async (wallet, log) => {
   log('executing default strategy');
@@ -38,6 +39,10 @@ interface GlobalBotControlsProps {
     onSelectPreset: (preset: string) => void;
     isAdvancedMode: boolean;
     onToggleAdvancedMode: (checked: boolean) => void;
+    userStrategies: UserStrategy[];
+    onSaveCurrentStrategy: (name: string) => void;
+    onLoadStrategy: (id: string) => void;
+    onDeleteStrategy: (id: string) => void;
 }
 
 export default function GlobalBotControls({
@@ -48,6 +53,10 @@ export default function GlobalBotControls({
     onSelectPreset,
     isAdvancedMode,
     onToggleAdvancedMode,
+    userStrategies,
+    onSaveCurrentStrategy,
+    onLoadStrategy,
+    onDeleteStrategy,
 }: GlobalBotControlsProps) {
     const [isExpanded, setIsExpanded] = useState(false);
     const [showAdvancedModal, setShowAdvancedModal] = useState(false);
@@ -104,7 +113,7 @@ export default function GlobalBotControls({
                             <div className="ml-3 text-white font-bold">{isLogicEnabled ? 'ON' : 'OFF'}</div>
                         </div>
                     </div>
-                     <div>
+                    <div>
                         <label className="block text-sm font-semibold text-gray-200 mb-1">Bot Code</label>
                         <textarea
                             className="w-full bg-gray-900 text-gray-200 p-2 rounded-md text-sm font-mono"
@@ -112,6 +121,15 @@ export default function GlobalBotControls({
                             value={botCode}
                             onChange={(e) => setBotCode(e.target.value)}
                         />
+                        <button
+                            className="mt-2 px-2 py-1 text-sm bg-blue-700 rounded-md"
+                            onClick={() => {
+                                const name = prompt('Enter a name for this strategy:');
+                                if (name) onSaveCurrentStrategy(name);
+                            }}
+                        >
+                            Save Current Strategy
+                        </button>
                     </div>
 
                     <div>
@@ -144,6 +162,34 @@ export default function GlobalBotControls({
                             Advanced mode executes custom code and may have compliance risks.
                         </p>
                     )}
+                    <div>
+                        <h4 className="font-semibold text-gray-200 mb-1">My Strategies</h4>
+                        {userStrategies.length === 0 ? (
+                            <p className="text-sm text-gray-400">No saved strategies.</p>
+                        ) : (
+                            <ul className="space-y-1">
+                                {userStrategies.map((s) => (
+                                    <li key={s.id} className="flex justify-between items-center">
+                                        <span className="text-sm text-gray-200">{s.name}</span>
+                                        <div className="space-x-1">
+                                            <button
+                                                className="px-1 py-0.5 text-xs bg-gray-700 rounded-md"
+                                                onClick={() => onLoadStrategy(s.id)}
+                                            >
+                                                Load
+                                            </button>
+                                            <button
+                                                className="px-1 py-0.5 text-xs bg-red-700 rounded-md"
+                                                onClick={() => onDeleteStrategy(s.id)}
+                                            >
+                                                Delete
+                                            </button>
+                                        </div>
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
+                    </div>
                 </div>
             )}
             {showAdvancedModal && (
