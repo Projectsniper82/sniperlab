@@ -14,6 +14,7 @@ import { useBotContext } from '@/context/BotContext';
 import { useGlobalLogs } from '@/context/GlobalLogContext';
 import { useBotWalletReload } from '@/context/BotWalletReloadContext';
 import { useBotService } from '@/context/BotServiceContext';
+import { useChartData } from '@/context/ChartDataContext';
 
 // Import other hooks and utilities you use for fetching LP data
 import { useWallet } from '@solana/wallet-adapter-react';
@@ -52,11 +53,19 @@ export default function TradingBotsPage() {
         addLog(logMessage);
     };
 
+    const { lastPrice, currentMarketCap, currentLpValue, solUsdPrice } = useChartData();
+
     const handleToggleAdvancedMode = (checked: boolean) => {
         setIsAdvancedMode(checked);
          if (checked) {
+            const fields = Object.keys({
+                lastPrice,
+                currentMarketCap,
+                currentLpValue,
+                ...(solUsdPrice !== null ? { solUsdPrice } : {}),
+            });
             addLog(
-                'Advanced mode enabled; bots can access additional on-chain data including market price, volume, and liquidity.'
+                `Advanced mode enabled; context.market exposes: ${fields.join(', ')}`,
             );
         } else {
             addLog('Advanced mode disabled.');
