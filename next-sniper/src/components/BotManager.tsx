@@ -82,16 +82,20 @@ export default function BotManager({ selectedTokenAddress, isLpActive, bots }: B
         }
     }, [isTradingActive, botWallets, botCode, startBot, stopBot, rpcUrl, lastPrice, currentMarketCap, currentLpValue, solUsdPrice]);
 
-    const handleCreateBotWallet = () => {
+    const handleCreateBotWallet = async () => {
         const newWallet = generateBotWallet();
         const updated = [...botWallets, newWallet];
-        saveBotWallets(network, updated);
-        setBotWallets(updated);
+        try {
+            await saveBotWallets(network, updated);
+            setBotWallets(updated);
             // update global bot list
-        setAllBotsByNetwork(prev => ({
-            ...prev,
-            [network]: [...prev[network], { id: newWallet.publicKey.toBase58(), secret: Array.from(newWallet.secretKey) }]
-        }));
+         setAllBotsByNetwork(prev => ({
+                ...prev,
+                [network]: [...prev[network], { id: newWallet.publicKey.toBase58(), secret: Array.from(newWallet.secretKey) }]
+            }));
+        } catch (error: any) {
+            alert(error?.message || 'Failed to save bot wallets.');
+        }
     };
 
         const confirmAndClearWallets = () => {
