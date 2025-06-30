@@ -6,9 +6,19 @@ import * as service from '@/utils/botService';
 import type { TradingStrategy } from '@/utils/tradingStrategy';
 
 interface BotServiceCtx {
- addBot: (wallet: Keypair, strategy?: TradingStrategy, intervalMs?: number) => void;
+ addBot: (
+    wallet: Keypair,
+    strategy?: TradingStrategy,
+    intervalMs?: number,
+    context?: any
+  ) => void;
   removeBot: (id: string) => void;
-  startBot: (id: string, strategy?: TradingStrategy, intervalMs?: number) => void;
+  startBot: (
+    id: string,
+    strategy?: TradingStrategy,
+    context?: any,
+    intervalMs?: number
+  ) => void;
   stopBot: (id: string) => void;
   log: (id: string, message: string) => void;
   getLogs: (id: string) => { timestamp: number; message: string }[];

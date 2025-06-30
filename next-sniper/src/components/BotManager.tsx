@@ -17,6 +17,7 @@ import { useBotLogic } from '@/context/BotLogicContext';
 import { useBotWalletReload } from '@/context/BotWalletReloadContext';
 import { useBotContext, BotInstance } from '@/context/BotContext';
 import { compileStrategy } from '@/utils/tradingStrategy';
+import { useChartData } from '@/context/ChartDataContext';
 
 
 // Define the props the BotManager will accept from the page
@@ -28,12 +29,13 @@ interface BotManagerProps {
 }
 
 export default function BotManager({ selectedTokenAddress, isLpActive, bots }: BotManagerProps) {
-    const { connection, network } = useNetwork();
+   const { connection, network, rpcUrl } = useNetwork();
     const { publicKey: userPublicKey, sendTransaction } = useWallet();
     const { addBot, removeBot, startBot, stopBot } = useBotService();
     const { isLogicEnabled } = useBotLogic();
     const { registerReloader } = useBotWalletReload();
     const { setAllBotsByNetwork, isTradingActive, startTrading, stopTrading, botCode } = useBotContext();
+    const { lastPrice, currentMarketCap, currentLpValue, solUsdPrice } = useChartData();
     const [botWallets, setBotWallets] = useState<Keypair[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [showConfirmModal, setShowConfirmModal] = useState(false);
@@ -64,12 +66,21 @@ export default function BotManager({ selectedTokenAddress, isLpActive, bots }: B
 
     useEffect(() => {
         const strategy = compileStrategy(botCode);
+        const context = {
+            rpcUrl,
+            market: {
+                lastPrice,
+                currentMarketCap,
+                currentLpValue,
+                solUsdPrice,
+            },
+        };
         if (isTradingActive) {
-            botWallets.forEach(w => startBot(w.publicKey.toBase58(), strategy));
+            botWallets.forEach(w => startBot(w.publicKey.toBase58(), strategy, context));
         } else {
             botWallets.forEach(w => stopBot(w.publicKey.toBase58()));
         }
-    }, [isTradingActive, botWallets, botCode, startBot, stopBot]);
+    }, [isTradingActive, botWallets, botCode, startBot, stopBot, rpcUrl, lastPrice, currentMarketCap, currentLpValue, solUsdPrice]);
 
     const handleCreateBotWallet = () => {
         const newWallet = generateBotWallet();
