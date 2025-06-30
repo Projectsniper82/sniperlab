@@ -50,6 +50,14 @@ Wallets are saved to local storage as soon as funding begins. Early saving
 prevents loss of generated wallets if a transfer fails. They are saved again
 once all transfers complete for confirmation.
 
+## Encryption Password
+
+Bot wallet secret keys are encrypted before being stored. Set
+`NEXT_PUBLIC_WALLET_PASSWORD` in your `.env.local` file to provide the
+encryption password at build time. If this variable is not set, the application
+will prompt for a password in the browser when wallets are first saved. Never
+commit your chosen password to source control.
+
 ## Strategy Context
 
 WWhen trading bots execute, a `context` object is passed to your strategy

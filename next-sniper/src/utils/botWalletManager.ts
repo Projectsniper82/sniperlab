@@ -1,8 +1,23 @@
 import { Keypair } from '@solana/web3.js';
 import { NetworkType } from '@/context/NetworkContext';
 
-const getEncryptionPassword = () => {
-    return 'my-super-secret-password-that-should-be-user-provided';
+let cachedPassword: string | null = null;
+
+const getEncryptionPassword = (): string => {
+    if (cachedPassword) return cachedPassword;
+    const envPass = process.env.NEXT_PUBLIC_WALLET_PASSWORD;
+    if (envPass && envPass !== '') {
+        cachedPassword = envPass;
+        return envPass;
+    }
+    if (typeof window !== 'undefined') {
+        const input = window.prompt('Enter encryption password for bot wallets:');
+        if (input && input !== '') {
+            cachedPassword = input;
+            return input;
+        }
+    }
+    throw new Error('Encryption password not provided');
 };
 
 export function generateBotWallet(): Keypair {
