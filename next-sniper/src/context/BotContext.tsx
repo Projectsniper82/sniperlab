@@ -12,10 +12,18 @@ import { useGlobalLogs } from './GlobalLogContext';
 import type { NetworkType } from './NetworkContext';
 import { useNetwork } from './NetworkContext';
 import { useChartData } from './ChartDataContext';
+import { useToken } from './TokenContext';
+
 
 // Template used when initializing new bot code in the editor
-const DEFAULT_BOT_CODE = `exports.strategy = async (wallet, log) => {
-  log('executing default strategy');
+const DEFAULT_BOT_CODE = `exports.strategy = async (wallet, log, ctx) => {
+  log('executing default strategy on ' + ctx.rpcUrl);
+  if (!ctx.tokenAddress) {
+    log('no token configured');
+    return;
+  }
+  log('wallet ' + wallet.publicKey.toBase58() + ' ready for token ' + ctx.tokenAddress);
+  // Add trading actions here. Wallet is already wrapped with a wallet adapter
 };`;
 
 export interface BotInstance {
@@ -52,6 +60,7 @@ export const BotProvider = ({ children }: { children: React.ReactNode }) => {
   const { network, rpcUrl } = useNetwork();
   const { lastPrice, currentMarketCap, currentLpValue, solUsdPrice } =
     useChartData();
+  const { tokenAddress, isLpActive } = useToken();
   const [botCode, setBotCode] = useState(DEFAULT_BOT_CODE);
   const [isAdvancedMode, setIsAdvancedMode] = useState(false);
   const [isTradingActive, setIsTradingActive] = useState(false);
@@ -90,6 +99,8 @@ export const BotProvider = ({ children }: { children: React.ReactNode }) => {
     const systemState = getSystemState();
     const context: any = {
       rpcUrl,
+      tokenAddress,
+      isLpActive,
       market: {
         lastPrice,
         currentMarketCap,
@@ -115,6 +126,8 @@ export const BotProvider = ({ children }: { children: React.ReactNode }) => {
     currentLpValue,
     solUsdPrice,
     isAdvancedMode,
+    tokenAddress,
+    isLpActive,
   ]);
 
    const startTrading = useCallback(() => {

@@ -79,6 +79,15 @@ function. The object currently includes:
 
 Strategies can inspect these values to make trading decisions.
 
+he context now also provides:
+
+- `tokenAddress` – mint address selected in the UI.
+- `isLpActive` – `true` if a liquidity pool was detected for the token.
+- `web3` – the `@solana/web3.js` module loaded inside the worker.
+
+Bot wallets are automatically wrapped with a lightweight wallet adapter so your
+strategy can sign transactions without additional setup.
+
 ### Advanced Mode
 
 When Advanced Mode is enabled, your strategy receives an additional optional
