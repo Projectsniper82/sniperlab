@@ -69,7 +69,9 @@ export function loadBotWallets(network: NetworkType): Keypair[] {
         return wallets;
     } catch (error) {
         console.error(`[BotWalletManager] Failed to load wallets for ${network}:`, error);
-        clearBotWallets(network);
+       // Do not automatically clear stored wallets so the user can retry with
+        // the correct password. Surface the error to the caller instead.
+        throw new Error('Failed to load bot wallets. Please re-enter the correct password.');
         return [];
     }
 }
