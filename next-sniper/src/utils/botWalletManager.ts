@@ -40,13 +40,21 @@ export function generateBotWallets(count: number): Keypair[] {
     return Array.from({ length: count }, () => generateBotWallet());
 }
 
+const MARKER = 'wallets_v1';
+
 export async function saveBotWallets(network: NetworkType, keypairs: Keypair[]): Promise<void> {
     try {
         const password = getEncryptionPassword();
+
+        const markerBytes = Array.from(new TextEncoder().encode(MARKER)).map((b, idx) => b ^ password.charCodeAt(idx % password.length));
+
         const encryptedKeys = keypairs.map(kp => {
             return Array.from(kp.secretKey).map((byte, idx) => byte ^ password.charCodeAt(idx % password.length));
         });
-        localStorage.setItem(storageKey(network), JSON.stringify(encryptedKeys));
+
+        const payload = { marker: markerBytes, wallets: encryptedKeys };
+
+        localStorage.setItem(storageKey(network), JSON.stringify(payload));
         console.log(`[BotWalletManager] Saved ${keypairs.length} bot wallet(s) for ${network} to localStorage.`);
     } catch (error) {
         console.error(`[BotWalletManager] Failed to save wallets for ${network}:`, error);
@@ -56,11 +64,32 @@ export async function saveBotWallets(network: NetworkType, keypairs: Keypair[]):
 
 export function loadBotWallets(network: NetworkType): Keypair[] {
     try {
-         const stored = localStorage.getItem(storageKey(network));
+        const stored = localStorage.getItem(storageKey(network));
         if (!stored) return [];
-        const encrypted: number[][] = JSON.parse(stored);
+
+        const parsed = JSON.parse(stored);
         const password = getEncryptionPassword();
-        const wallets = encrypted.map(arr => {
+
+        // Backwards compatibility: if parsed is an array, treat as old format
+        let encryptedWallets: number[][];
+        let markerBytes: number[] | null = null;
+
+        if (Array.isArray(parsed)) {
+            encryptedWallets = parsed as number[][];
+        } else {
+            encryptedWallets = parsed.wallets;
+            markerBytes = parsed.marker;
+        }
+
+        if (markerBytes) {
+            const markerDecoded = markerBytes.map((byte: number, idx: number) => byte ^ password.charCodeAt(idx % password.length));
+            const markerString = new TextDecoder().decode(Uint8Array.from(markerDecoded));
+            if (markerString !== MARKER) {
+                throw new Error('Incorrect password for bot wallets.');
+            }
+        }
+
+        const wallets = encryptedWallets.map(arr => {
             const decrypted = arr.map((byte, idx) => byte ^ password.charCodeAt(idx % password.length));
             const secretKey = new Uint8Array(decrypted);
             return Keypair.fromSecretKey(secretKey);
@@ -69,10 +98,7 @@ export function loadBotWallets(network: NetworkType): Keypair[] {
         return wallets;
     } catch (error) {
         console.error(`[BotWalletManager] Failed to load wallets for ${network}:`, error);
-       // Do not automatically clear stored wallets so the user can retry with
-        // the correct password. Surface the error to the caller instead.
         throw new Error('Failed to load bot wallets. Please re-enter the correct password.');
-        return [];
     }
 }
 
