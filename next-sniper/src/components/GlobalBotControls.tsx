@@ -60,7 +60,7 @@ export default function GlobalBotControls({
 }: GlobalBotControlsProps) {
     const [isExpanded, setIsExpanded] = useState(false);
     const [showAdvancedModal, setShowAdvancedModal] = useState(false);
-    const { startTrading, stopTrading } = useBotContext();
+    const { startTrading, stopTrading, getSystemState } = useBotContext();
     const { append } = useGlobalLogs();
 
     const handleToggle = (checked: boolean) => {
@@ -196,7 +196,15 @@ export default function GlobalBotControls({
                 <AdvancedModeModal
                     onConfirm={() => {
                         onToggleAdvancedMode(true);
-                        append('Advanced mode enabled');
+                        const state = getSystemState();
+                        const botCount = state.allBots.length;
+                        const tradeTotal = Object.values(state.tradeCounts).reduce(
+                          (a, b) => a + b,
+                          0
+                        );
+                        append(
+                          `Advanced mode enabled. ${botCount} bots, ${tradeTotal} total trades accessible.`
+                        );
                         setShowAdvancedModal(false);
                     }}
                     onCancel={() => setShowAdvancedModal(false)}

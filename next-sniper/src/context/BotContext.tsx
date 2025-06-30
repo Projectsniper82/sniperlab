@@ -39,6 +39,7 @@ interface BotContextState {
   setIsTradingActive: React.Dispatch<React.SetStateAction<boolean>>;
   startTrading: () => void;
   stopTrading: () => void;
+  getSystemState: () => { allBots: BotInstance[]; tradeCounts: Record<string, number> };
 }
 
 export const BotContext = createContext<BotContextState | undefined>(undefined);
@@ -54,10 +55,18 @@ export const BotProvider = ({ children }: { children: React.ReactNode }) => {
   const [botCode, setBotCode] = useState(DEFAULT_BOT_CODE);
   const [isAdvancedMode, setIsAdvancedMode] = useState(false);
   const [isTradingActive, setIsTradingActive] = useState(false);
+  const tradeCountsRef = useRef<Record<string, number>>({});
   const workerRef = useRef<Worker | null>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const runBotLogicRef = useRef<(() => void) | null>(null);
   const { append } = useGlobalLogs();
+
+  const getSystemState = useCallback(() => {
+    return {
+      allBots: Object.values(allBotsByNetwork).flat(),
+      tradeCounts: { ...tradeCountsRef.current },
+    };
+  }, [allBotsByNetwork]);
 
   const runBotLogic = useCallback(() => {
     if (!workerRef.current) {
@@ -82,7 +91,11 @@ export const BotProvider = ({ children }: { children: React.ReactNode }) => {
       };
     }
     const bots = allBotsByNetwork[network] || [];
-    const context = {
+    bots.forEach((b) => {
+      tradeCountsRef.current[b.id] = (tradeCountsRef.current[b.id] || 0) + 1;
+    });
+    const systemState = getSystemState();
+    const context: any = {
       rpcUrl,
       market: {
         lastPrice,
@@ -91,6 +104,9 @@ export const BotProvider = ({ children }: { children: React.ReactNode }) => {
         solUsdPrice,
       },
     };
+    if (isAdvancedMode) {
+      context.systemState = systemState;
+    }
     workerRef.current.postMessage({
       code: botCode,
       bots: bots.map((b) => b.secret),
@@ -105,6 +121,7 @@ export const BotProvider = ({ children }: { children: React.ReactNode }) => {
     currentMarketCap,
     currentLpValue,
     solUsdPrice,
+    isAdvancedMode,
   ]);
 
    const startTrading = useCallback(() => {
@@ -150,6 +167,7 @@ export const BotProvider = ({ children }: { children: React.ReactNode }) => {
     setIsTradingActive,
     startTrading,
     stopTrading,
+    getSystemState,
   };
 
   return <BotContext.Provider value={value}>{children}</BotContext.Provider>;

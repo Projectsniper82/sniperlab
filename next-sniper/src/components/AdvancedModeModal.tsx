@@ -25,7 +25,7 @@ export default function AdvancedModeModal({ onConfirm, onCancel }: AdvancedModeM
         {/* --- MODIFIED BODY --- */}
         <div className="space-y-3 text-left text-gray-300 text-sm">
             <p>
-                You are about to activate <strong>Advanced Mode</strong>. This feature will provide your custom trading logic with access to system-wide data, including the status of all active bots, which enables the implementation of coordinated trading strategies.
+               You are about to activate <strong>Advanced Mode</strong>. This feature will provide your custom trading logic with access to system-wide data, including the status of all active bots and basic trade statistics. This enables the implementation of coordinated trading strategies.
             </p>
             <p>
                 By proceeding, you acknowledge and agree that you are <strong>solely and exclusively responsible</strong> for the trading logic you implement and for ensuring its full compliance with all applicable laws, rules, and regulations governing securities and financial markets.

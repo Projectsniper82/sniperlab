@@ -65,3 +65,10 @@ function. The object currently includes:
   - `solUsdPrice` – current SOL/USD price or `null` if unavailable.
 
 Strategies can inspect these values to make trading decisions.
+
+### Advanced Mode
+
+When Advanced Mode is enabled, your strategy receives an additional
+`systemState` property on the context object. This contains aggregated
+information about every bot managed by the application, including a list of
+all bots and a running tally of how many trades each bot has executed.

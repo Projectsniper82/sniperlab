@@ -12,9 +12,10 @@ self.onmessage = async (ev) => {
       globalThis.Buffer = Buffer;
     }
     const web3 = await import('https://cdn.jsdelivr.net/npm/@solana/web3.js@1.98.2/lib/index.browser.esm.js');
-    const { rpcUrl, ...restContext } = context;
-    const connection = new web3.Connection(rpcUrl, 'confirmed');
-    const workerContext = { ...restContext, rpcUrl, connection };
+    const { rpcUrl, systemState, ...restContext } = context;
+  const connection = new web3.Connection(rpcUrl, 'confirmed');
+  const workerContext = { ...restContext, rpcUrl, connection };
+  if (systemState) workerContext.systemState = systemState;
     
     const wallets = bots.map((sk) => {
       try {
