@@ -3,6 +3,10 @@ import { NetworkType } from '@/context/NetworkContext';
 
 let cachedPassword: string | null = null;
 
+export const resetEncryptionPassword = (): void => {
+    cachedPassword = null;
+};
+
 const getEncryptionPassword = (): string => {
     if (cachedPassword) return cachedPassword;
     const envPass = process.env.NEXT_PUBLIC_WALLET_PASSWORD;
@@ -98,6 +102,7 @@ export function loadBotWallets(network: NetworkType): Keypair[] {
         return wallets;
     } catch (error) {
         console.error(`[BotWalletManager] Failed to load wallets for ${network}:`, error);
+        resetEncryptionPassword();
         throw new Error('Failed to load bot wallets. Please re-enter the correct password.');
     }
 }

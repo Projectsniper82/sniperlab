@@ -59,7 +59,9 @@ will prompt for a password in the browser when wallets are first saved. Never
 commit your chosen password to source control.
 
 If an incorrect password is entered when loading wallets, the UI will now show
-an explicit error message instead of loading empty wallets.
+an explicit error message instead of loading empty wallets. The cached password
+is cleared so the next load attempt will prompt you again.
+
 
 ## Strategy Context
 
