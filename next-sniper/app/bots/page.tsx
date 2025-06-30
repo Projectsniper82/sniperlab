@@ -65,7 +65,7 @@ export default function TradingBotsPage() {
                 ...(solUsdPrice !== null ? { solUsdPrice } : {}),
             });
             addLog(
-                `Advanced mode enabled; context.market exposes: ${fields.join(', ')}`,
+                `Advanced mode enabled; context.market exposes: ${fields.join(', ')}. context.systemState is also available.`,
             );
         } else {
             addLog('Advanced mode disabled.');

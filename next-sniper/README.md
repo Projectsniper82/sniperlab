@@ -76,7 +76,11 @@ Strategies can inspect these values to make trading decisions.
 
 ### Advanced Mode
 
-When Advanced Mode is enabled, your strategy receives an additional
-`systemState` property on the context object. This contains aggregated
-information about every bot managed by the application, including a list of
-all bots and a running tally of how many trades each bot has executed.
+When Advanced Mode is enabled, your strategy receives an additional optional
+`systemState` object on the context. This contains aggregated information about
+every bot managed by the application:
+
+- `allBots` – array of all bot instances managed by the UI.
+- `tradeCounts` – map of bot IDs to the number of trades each has executed.
+
+Use these values to coordinate advanced strategies across multiple bots.

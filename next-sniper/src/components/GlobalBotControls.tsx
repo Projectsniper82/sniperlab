@@ -271,7 +271,7 @@ export default function GlobalBotControls({
                           0
                         );
                         append(
-                          `Advanced mode enabled. ${botCount} bots, ${tradeTotal} total trades accessible.`
+                          `Advanced mode enabled. ${botCount} bots and ${tradeTotal} total trades exposed via context.systemState.`
                         );
                         setShowAdvancedModal(false);
                     }}
