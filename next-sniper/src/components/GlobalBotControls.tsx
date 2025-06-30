@@ -6,28 +6,96 @@ import { useGlobalLogs } from '@/context/GlobalLogContext';
 import { useBotContext } from '@/context/BotContext';
 import { UserStrategy } from '@/context/BotLogicContext';
 
-const DEFAULT_PRESET = `exports.strategy = async (wallet, log) => {
-  log('executing default strategy');
-};`;
-
-const MARKET_MAKER_PRESET = `exports.strategy = async (wallet, log, context) => {
-  log('running market maker strategy');
-  const { market } = context;
-  if (!market) {
-    log('market data unavailable');
-    return;
+const DEFAULT_PRESET = `
+// Basic example strategy. It buys 0.01 SOL worth of a token when the
+// last observed price is below 0.5 SOL. Replace \`POOL_ID\` and token
+// mint addresses with the market you want to trade.
+exports.strategy = async (wallet, log, context) => {
+  const { connection, market } = context ?? {};
+  if (!wallet?.publicKey || !connection) {
+    return log('wallet or connection unavailable');
   }
-  const { lastPrice, currentMarketCap, currentLpValue, solUsdPrice } = market;
-  log(\`last price: \${lastPrice} SOL\`);
-  if (solUsdPrice) {
-    const usd = (lastPrice * solUsdPrice).toFixed(4);
-    log(\`last price USD: \${usd}\`);
+  if (!market || typeof market.lastPrice !== 'number') {
+    return log('price data unavailable');
   }
-  log(\`market cap: \${currentMarketCap} SOL\`);
-  log(\`LP value: \${currentLpValue} SOL\`);
-  // TODO: implement order placement logic using the data above
+ 
+if (market.lastPrice < 0.5) {
+    const { createWalletAdapter } = await import('@/utils/walletAdapter');
+    const { swapRaydiumTokens } = await import('@/utils/raydiumSdkAdapter');
+    const { default: BN } = await import('bn.js');
 
-};`;
+    const adapter = createWalletAdapter(wallet, connection);
+    const lamports = new BN(0.01 * 1e9); // spend 0.01 SOL
+    const poolId = 'POOL_ID'; // update with your Raydium pool ID
+    const wsol = 'So11111111111111111111111111111111111111112';
+    try {
+      await swapRaydiumTokens(adapter, connection, poolId, wsol, lamports, 0.01);
+      log('buy order submitted');
+    } catch (e) {
+      log('buy failed: ' + (e?.message || e));
+    }
+  } else {
+    log('price above threshold, no trade');
+  }
+};
+// You can tweak the thresholds, amounts and pool/token addresses above
+// to implement your own custom logic.`;
+
+const MARKET_MAKER_PRESET = `
+// Simple market making example. On each run it either buys or sells a
+// tiny amount around the current price. Adjust the pool and mint
+// addresses as well as the price spread to suit your needs.
+exports.strategy = async (wallet, log, context) => {
+  const { connection, market } = context ?? {};
+  if (!wallet?.publicKey || !connection) {
+    return log('wallet or connection unavailable');
+  }
+  if (!market || typeof market.lastPrice !== 'number') {
+    return log('price data unavailable');
+  }
+
+  const { createWalletAdapter } = await import('@/utils/walletAdapter');
+  const { swapRaydiumTokens } = await import('@/utils/raydiumSdkAdapter');
+  const { default: BN } = await import('bn.js');
+
+  const adapter = createWalletAdapter(wallet, connection);
+  const poolId = 'POOL_ID'; // your Raydium pool
+  const tokenMint = 'TOKEN_MINT';
+  const wsol = 'So11111111111111111111111111111111111111112';
+
+  const buyTarget = market.lastPrice * 0.95;  // 5% below market
+  const sellTarget = market.lastPrice * 1.05; // 5% above market
+
+  try {
+    if (market.lastPrice <= buyTarget) {
+      await swapRaydiumTokens(
+        adapter,
+        connection,
+        poolId,
+        wsol,
+        new BN(0.005 * 1e9),
+        0.01
+      );
+      log('market maker buy placed');
+    } else if (market.lastPrice >= sellTarget) {
+      await swapRaydiumTokens(
+        adapter,
+        connection,
+        poolId,
+        tokenMint,
+        new BN(1),
+        0.01
+      );
+      log('market maker sell placed');
+    } else {
+      log('within spread, nothing to do');
+    }
+  } catch (e) {
+    log('market maker error: ' + (e?.message || e));
+  }
+};
+// Modify the spread and trade sizes above to experiment with different
+// market making behaviours.`;
 
 
 // Define the props for the component
